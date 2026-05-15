@@ -50,10 +50,12 @@ pub fn writeHelp(
     try writeCommandDetail(out, use_color, "remove [--live] [--api|--skip-api]");
     try writeCommandDetail(out, use_color, "remove <alias|email|display-number|query>...");
     try writeCommandDetail(out, use_color, "remove --all");
+    try writeCommandSummary(out, use_color, "refresh-bg <enable|disable>", "Enable or disable background usage refresh");
     try writeCommandSummary(out, use_color, "clean", "Delete backup and stale files under accounts/");
     try writeCommandDetail(out, use_color, "clean background");
     try writeCommandSummary(out, use_color, "config", "Manage configuration");
     try writeCommandDetail(out, use_color, "config live --interval <seconds>");
+    try writeCommandDetail(out, use_color, "config refresh --interval <seconds|range>");
 
     try out.writeAll("\n");
     if (use_color) try out.writeAll(style.ansi.cyan);
@@ -125,6 +127,7 @@ fn commandNameForTopic(topic: HelpTopic) []const u8 {
         .export_auth => "export",
         .switch_account => "switch",
         .remove_account => "remove",
+        .refresh_bg => "refresh-bg",
         .clean => "clean",
         .config => "config",
     };
@@ -139,21 +142,22 @@ fn commandDescriptionForTopic(topic: HelpTopic) []const u8 {
         .export_auth => "Export stored account auth files.",
         .switch_account => "Switch the active account by alias, email, display number, or partial query.",
         .remove_account => "Remove one or more accounts by alias, email, display number, or partial query.",
+        .refresh_bg => "Enable or disable background usage refresh.",
         .clean => "Delete backup and stale files under accounts/.",
-        .config => "Manage live refresh configuration.",
+        .config => "Manage refresh configuration.",
     };
 }
 
 fn commandHelpHasExamples(topic: HelpTopic) bool {
     return switch (topic) {
-        .import_auth, .export_auth, .switch_account, .remove_account, .config => true,
+        .import_auth, .export_auth, .switch_account, .remove_account, .refresh_bg, .config => true,
         else => false,
     };
 }
 
 fn commandHelpHasOptions(topic: HelpTopic) bool {
     return switch (topic) {
-        .list, .login, .import_auth, .export_auth, .switch_account, .remove_account, .config => true,
+        .list, .login, .import_auth, .export_auth, .switch_account, .remove_account, .refresh_bg, .config => true,
         else => false,
     };
 }
@@ -204,12 +208,17 @@ fn writeUsageLines(out: *std.Io.Writer, topic: HelpTopic) !void {
             try out.writeAll("  codex-auth remove <alias|email|display-number|query>...\n");
             try out.writeAll("  codex-auth remove --all\n");
         },
+        .refresh_bg => {
+            try out.writeAll("  codex-auth refresh-bg enable\n");
+            try out.writeAll("  codex-auth refresh-bg disable\n");
+        },
         .clean => {
             try out.writeAll("  codex-auth clean\n");
             try out.writeAll("  codex-auth clean background\n");
         },
         .config => {
             try out.writeAll("  codex-auth config live --interval <seconds>\n");
+            try out.writeAll("  codex-auth config refresh --interval <seconds|range>\n");
         },
     }
 }
@@ -223,6 +232,7 @@ pub fn helpCommandForTopic(topic: HelpTopic) []const u8 {
         .export_auth => "codex-auth export --help",
         .switch_account => "codex-auth switch --help",
         .remove_account => "codex-auth remove --help",
+        .refresh_bg => "codex-auth refresh-bg --help",
         .clean => "codex-auth clean --help",
         .config => "codex-auth config --help",
     };
@@ -270,9 +280,15 @@ fn writeOptionLines(out: *std.Io.Writer, topic: HelpTopic) !void {
             try out.writeAll("  <alias|email|display-number|query>...\n");
             try out.writeAll("               Remove one or more matching accounts.\n");
         },
+        .refresh_bg => {
+            try out.writeAll("  enable    Start background usage refresh.\n");
+            try out.writeAll("  disable   Stop background usage refresh after the current sleep or request finishes.\n");
+        },
         .config => {
             try out.writeAll("  live --interval <seconds>\n");
             try out.writeAll("                    Set the live TUI refresh interval from 5 to 3600 seconds.\n");
+            try out.writeAll("  refresh --interval <seconds|range>\n");
+            try out.writeAll("                    Set the background refresh interval or range from 5 to 3600 seconds.\n");
         },
         else => {},
     }
@@ -332,12 +348,18 @@ fn writeExampleLines(out: *std.Io.Writer, topic: HelpTopic) !void {
             try out.writeAll("  codex-auth remove john@example.com jane@example.com\n");
             try out.writeAll("  codex-auth remove --all\n");
         },
+        .refresh_bg => {
+            try out.writeAll("  codex-auth refresh-bg enable\n");
+            try out.writeAll("  codex-auth refresh-bg disable\n");
+        },
         .clean => {
             try out.writeAll("  codex-auth clean\n");
             try out.writeAll("  codex-auth clean background\n");
         },
         .config => {
             try out.writeAll("  codex-auth config live --interval 60\n");
+            try out.writeAll("  codex-auth config refresh --interval 60\n");
+            try out.writeAll("  codex-auth config refresh --interval 60-70\n");
         },
     }
 }

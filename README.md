@@ -76,6 +76,8 @@ Detailed command documentation lives in [docs/commands/README.md](./docs/command
 | [`codex-auth import --purge [<path>]`](./docs/commands/import.md) | Rebuild `registry.json` from auth files |
 | [`codex-auth export [<dir>]`](./docs/commands/export.md) | Export stored account auth files |
 | [`codex-auth export --cpa [<dir>]`](./docs/commands/export.md) | Export CLIProxyAPI token JSON |
+| [`codex-auth refresh-bg enable`](./docs/commands/refresh-bg.md) | Enable background usage refresh |
+| [`codex-auth refresh-bg disable`](./docs/commands/refresh-bg.md) | Disable background usage refresh |
 | [`codex-auth clean`](./docs/commands/clean.md) | Delete managed backup and stale account files |
 
 ### Configuration
@@ -83,6 +85,7 @@ Detailed command documentation lives in [docs/commands/README.md](./docs/command
 | Command | Description |
 |---------|-------------|
 | [`codex-auth config live --interval <seconds>`](./docs/commands/config.md) | Configure live TUI refresh interval |
+| [`codex-auth config refresh --interval <seconds|range>`](./docs/commands/config.md) | Configure background refresh interval |
 
 ## Quick Examples
 
@@ -94,6 +97,9 @@ codex-auth switch 02
 codex-auth remove work
 codex-auth import /path/to/auth.json --alias personal
 codex-auth list --skip-api
+codex-auth config refresh --interval 60
+codex-auth config refresh --interval 60-70
+codex-auth refresh-bg enable
 ```
 
 ## Q&A
@@ -131,6 +137,8 @@ This project is provided as-is and use is at your own risk.
 
 1. **API (default):** The tool makes direct HTTPS requests to OpenAI's endpoints using your account's access token. This enables both usage refresh and team name refresh. npm installs already satisfy the runtime requirement.
 2. **Local-only:** With per-command `--skip-api`, the tool scans local `~/.codex/sessions/*/rollout-*.jsonl` files for usage data and skips team name refresh API calls. This mode is safer, but it can be less accurate because recent Codex rollout files often contain `rate_limits: null`, so the latest local usage limit data may lag by several hours.
+
+Background refresh uses the same API-backed usage endpoint when `refresh-bg enable` is active.
 
 **API Call Declaration:**
 By using the default API-backed refresh, this tool will send your ChatGPT access token to OpenAI's servers, including `https://chatgpt.com/backend-api/wham/usage` for usage limit and `https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27` for team name. This behavior may be detected by OpenAI and could violate their terms of service, potentially leading to account suspension or other risks. The decision to use this feature and any resulting consequences are entirely yours.

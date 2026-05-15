@@ -4,6 +4,7 @@
 
 ```shell
 codex-auth config live --interval <seconds>
+codex-auth config refresh --interval <seconds|range>
 ```
 
 ## Live Refresh Config
@@ -12,6 +13,18 @@ codex-auth config live --interval <seconds>
 
 - Allowed range: `5` to `3600`.
 - Stored in `registry.json` as top-level `interval_seconds`.
+
+## Background Refresh Config
+
+`config refresh --interval <seconds|range>` sets the background usage refresh interval.
+
+- Allowed range: `5` to `3600`.
+- Single value example: `60`.
+- Range example: `60-70`, which chooses a random delay from `60` to `70` seconds between background refresh attempts.
+- The interval is the delay between background account refresh attempts.
+- Stored in `accounts/refresh-bg.json` as `interval_min_seconds` and `interval_max_seconds`.
+- The command prints the current background refresh enabled/disabled status after saving the interval.
+- Use `codex-auth refresh-bg enable` and `codex-auth refresh-bg disable` to start or stop background refresh.
 
 ## API Refresh
 

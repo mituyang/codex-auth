@@ -3330,6 +3330,74 @@ test "Scenario: Given config live interval when running command then registry st
     try std.testing.expect(std.mem.indexOf(u8, data, "\"live\"") == null);
 }
 
+test "Scenario: Given config refresh interval when running command then background config stores the interval" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    const codex_home = try codexHomeAlloc(gpa, home_root);
+    defer gpa.free(codex_home);
+
+    const config_result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "config", "refresh", "--interval", "45" });
+    defer gpa.free(config_result.stdout);
+    defer gpa.free(config_result.stderr);
+    try expectSuccess(config_result);
+    try std.testing.expectEqualStrings(
+        "Background refresh interval: 45s\n" ++
+            "Background refresh: disabled\n",
+        config_result.stdout,
+    );
+    try std.testing.expectEqualStrings("", config_result.stderr);
+
+    const config_path = try fs.path.join(gpa, &[_][]const u8{ codex_home, "accounts", "refresh-bg.json" });
+    defer gpa.free(config_path);
+    const data = try fixtures.readFileAlloc(gpa, config_path);
+    defer gpa.free(data);
+    try std.testing.expect(std.mem.indexOf(u8, data, "\"enabled\": false") != null);
+    try std.testing.expect(std.mem.indexOf(u8, data, "\"interval_min_seconds\": 45") != null);
+    try std.testing.expect(std.mem.indexOf(u8, data, "\"interval_max_seconds\": 45") != null);
+}
+
+test "Scenario: Given config refresh interval range when running command then background config stores the range" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    const codex_home = try codexHomeAlloc(gpa, home_root);
+    defer gpa.free(codex_home);
+
+    const config_result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "config", "refresh", "--interval", "60-70" });
+    defer gpa.free(config_result.stdout);
+    defer gpa.free(config_result.stderr);
+    try expectSuccess(config_result);
+    try std.testing.expectEqualStrings(
+        "Background refresh interval: 60-70s\n" ++
+            "Background refresh: disabled\n",
+        config_result.stdout,
+    );
+    try std.testing.expectEqualStrings("", config_result.stderr);
+
+    const config_path = try fs.path.join(gpa, &[_][]const u8{ codex_home, "accounts", "refresh-bg.json" });
+    defer gpa.free(config_path);
+    const data = try fixtures.readFileAlloc(gpa, config_path);
+    defer gpa.free(data);
+    try std.testing.expect(std.mem.indexOf(u8, data, "\"enabled\": false") != null);
+    try std.testing.expect(std.mem.indexOf(u8, data, "\"interval_min_seconds\": 60") != null);
+    try std.testing.expect(std.mem.indexOf(u8, data, "\"interval_max_seconds\": 70") != null);
+}
+
 test "Scenario: Given default api usage when listing accounts then no warning is printed" {
     const gpa = std.testing.allocator;
     const project_root = try projectRootAlloc(gpa);

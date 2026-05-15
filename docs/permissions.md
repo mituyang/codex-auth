@@ -15,6 +15,7 @@ It does not currently force `<codex_home>/` itself to `0700`.
 On Unix-like systems, `codex-auth` creates these managed sensitive files with `0600` immediately and keeps them private on rewrite/sync paths:
 
 - `<codex_home>/accounts/registry.json`
+- `<codex_home>/accounts/refresh-bg.json`
 - `<codex_home>/accounts/<account file key>.auth.json`
 - `<codex_home>/accounts/auth.json.bak.YYYYMMDD-hhmmss[.N]`
 - `<codex_home>/accounts/registry.json.bak.YYYYMMDD-hhmmss[.N]`

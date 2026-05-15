@@ -40,7 +40,11 @@ The `accounts/check` response is parsed by `chatgpt_account_id`. `name: null` an
 ## Usage Refresh Rules
 
 - foreground refresh uses the usage API by default.
+- background refresh uses the usage API when `refresh-bg enable` is active.
 - `--skip-api` reads only the newest local `~/.codex/sessions/**/rollout-*.jsonl`.
+- background refresh processes one eligible ChatGPT account per configured interval; when an interval range is configured, each cycle uses a random delay within that range.
+- each background attempt chooses randomly from the five eligible accounts with the oldest `LAST ACTIVITY`; records with no usage timestamp are treated as oldest.
+- background refresh skips API-key accounts.
 - by default, `list` and interactive `switch` refresh all stored accounts before rendering, using stored auth snapshots under `accounts/` with a maximum concurrency of `3`
 - when one of those per-account foreground usage requests returns a non-`200` HTTP status, the corresponding `list` / `switch` row shows that response status in both usage columns until a later successful refresh replaces it
 - when a stored account snapshot cannot make a ChatGPT usage request because it is missing the required ChatGPT auth fields, the corresponding `list` / `switch` row shows `MissingAuth` in both usage columns until a later successful refresh replaces it

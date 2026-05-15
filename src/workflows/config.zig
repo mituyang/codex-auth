@@ -2,10 +2,12 @@ const std = @import("std");
 const cli = @import("../cli/root.zig");
 const io_util = @import("../core/io_util.zig");
 const registry = @import("../registry/root.zig");
+const refresh_bg = @import("refresh_bg.zig");
 
 pub fn handleConfig(allocator: std.mem.Allocator, codex_home: []const u8, opts: cli.types.ConfigOptions) !void {
     switch (opts) {
         .live => |live_opts| try handleLiveCommand(allocator, codex_home, live_opts),
+        .refresh => |refresh_opts| try refresh_bg.configureRefreshInterval(allocator, codex_home, refresh_opts),
     }
 }
 

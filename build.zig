@@ -62,6 +62,7 @@ pub fn build(b: *std.Build) void {
         "tests/tui_table_test.zig",
         "tests/workflows_core_test.zig",
         "tests/workflows_live_test.zig",
+        "tests/workflows_refresh_bg_test.zig",
     };
 
     const test_step = b.step("test", "Run tests");

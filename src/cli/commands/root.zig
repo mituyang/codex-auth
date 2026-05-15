@@ -9,6 +9,7 @@ const import_auth = @import("import.zig");
 const list = @import("list.zig");
 const login = @import("login.zig");
 const remove = @import("remove.zig");
+const refresh_bg = @import("refresh_bg.zig");
 const switch_account = @import("switch.zig");
 
 pub fn parseArgs(allocator: std.mem.Allocator, args: []const [:0]const u8) !types.ParseResult {
@@ -43,6 +44,7 @@ pub fn parseArgs(allocator: std.mem.Allocator, args: []const [:0]const u8) !type
     if (std.mem.eql(u8, cmd, "export")) return export_auth.parse(allocator, args[2..]);
     if (std.mem.eql(u8, cmd, "switch")) return switch_account.parse(allocator, args[2..]);
     if (std.mem.eql(u8, cmd, "remove")) return remove.parse(allocator, args[2..]);
+    if (std.mem.eql(u8, cmd, "refresh-bg")) return refresh_bg.parse(allocator, args[2..]);
     if (std.mem.eql(u8, cmd, "clean")) return clean.parse(allocator, args[2..]);
     if (std.mem.eql(u8, cmd, "config")) return config.parse(allocator, args[2..]);
 
@@ -95,6 +97,7 @@ fn helpTopicForName(name: []const u8) ?types.HelpTopic {
     if (std.mem.eql(u8, name, "export")) return .export_auth;
     if (std.mem.eql(u8, name, "switch")) return .switch_account;
     if (std.mem.eql(u8, name, "remove")) return .remove_account;
+    if (std.mem.eql(u8, name, "refresh-bg")) return .refresh_bg;
     if (std.mem.eql(u8, name, "clean")) return .clean;
     if (std.mem.eql(u8, name, "config")) return .config;
     return null;

@@ -42,7 +42,18 @@ pub const CleanOptions = struct {
 pub const LiveOptions = struct {
     interval_seconds: u16,
 };
-pub const ConfigOptions = union(enum) { live: LiveOptions };
+pub const RefreshOptions = struct {
+    interval_min_seconds: u16,
+    interval_max_seconds: u16,
+};
+pub const ConfigOptions = union(enum) {
+    live: LiveOptions,
+    refresh: RefreshOptions,
+};
+pub const RefreshBgAction = enum { enable, disable, run };
+pub const RefreshBgOptions = struct {
+    action: RefreshBgAction,
+};
 pub const HelpTopic = enum {
     top_level,
     list,
@@ -51,6 +62,7 @@ pub const HelpTopic = enum {
     export_auth,
     switch_account,
     remove_account,
+    refresh_bg,
     clean,
     config,
 };
@@ -62,6 +74,7 @@ pub const Command = union(enum) {
     export_auth: ExportOptions,
     switch_account: SwitchOptions,
     remove_account: RemoveOptions,
+    refresh_bg: RefreshBgOptions,
     clean: CleanOptions,
     config: ConfigOptions,
     version: void,

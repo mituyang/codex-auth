@@ -12,6 +12,7 @@ This directory documents command behavior by command. Use `codex-auth <command> 
 | `export` | [docs/commands/export.md](./export.md) |
 | `switch` | [docs/commands/switch.md](./switch.md) |
 | `remove` | [docs/commands/remove.md](./remove.md) |
+| `refresh-bg` | [docs/commands/refresh-bg.md](./refresh-bg.md) |
 | `clean` | [docs/commands/clean.md](./clean.md) |
 | `config` | [docs/commands/config.md](./config.md) |
 
@@ -22,3 +23,4 @@ This directory documents command behavior by command. Use `codex-auth <command> 
 - `--api` explicitly selects the default remote usage and account-name refresh path for the current command.
 - `--skip-api` forbids remote refresh for the current command.
 - Local-only usage refresh can update the active account from local Codex rollout files when usable local data exists.
+- Background usage refresh is controlled by `refresh-bg enable` and `refresh-bg disable`.

@@ -24,6 +24,7 @@ codex-auth config refresh --interval <seconds|range>
 - The interval is the delay between background account refresh attempts.
 - Stored in `accounts/refresh-bg.json` as `interval_min_seconds` and `interval_max_seconds`.
 - The command prints the current background refresh enabled/disabled status after saving the interval.
+- When background refresh is already enabled, the command also starts the background loop if it is not running.
 - Use `codex-auth refresh-bg enable` and `codex-auth refresh-bg disable` to start or stop background refresh.
 
 ## API Refresh

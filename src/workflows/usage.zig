@@ -415,9 +415,11 @@ pub fn refreshForegroundUsageForDisplayWithApiFetchersWithPoolInitUsingApiEnable
 
         if (worker_result.snapshot) |snapshot| {
             if (registry.rateLimitSnapshotsEqual(reg.accounts.items[idx].last_usage, snapshot)) {
+                registry.updateUsage(allocator, reg, reg.accounts.items[idx].account_key, snapshot);
+                worker_result.snapshot = null;
                 outcome.unchanged = true;
                 state.unchanged += 1;
-                worker_result.deinit(allocator);
+                registry_changed = true;
             } else {
                 registry.updateUsage(allocator, reg, reg.accounts.items[idx].account_key, snapshot);
                 worker_result.snapshot = null;

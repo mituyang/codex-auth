@@ -44,9 +44,18 @@ pub fn handleRefreshBg(allocator: std.mem.Allocator, codex_home: []const u8, opt
 
 pub fn configureRefreshInterval(allocator: std.mem.Allocator, codex_home: []const u8, opts: cli.types.RefreshOptions) !void {
     var cfg = try loadRefreshBackgroundConfig(allocator, codex_home);
+    const was_enabled = cfg.enabled;
+    if (was_enabled) {
+        cfg.enabled = false;
+        try saveRefreshBackgroundConfig(allocator, codex_home, cfg);
+        _ = try waitForRefreshBackgroundStop(allocator, codex_home);
+    }
+
     cfg.interval_min_seconds = opts.interval_min_seconds;
     cfg.interval_max_seconds = opts.interval_max_seconds;
+    cfg.enabled = was_enabled;
     try saveRefreshBackgroundConfig(allocator, codex_home, cfg);
+    if (cfg.enabled) try startRefreshBackgroundProcess(allocator);
 
     var stdout: io_util.Stdout = undefined;
     stdout.init();
@@ -76,6 +85,7 @@ fn disableRefreshBackground(allocator: std.mem.Allocator, codex_home: []const u8
     var cfg = try loadRefreshBackgroundConfig(allocator, codex_home);
     cfg.enabled = false;
     try saveRefreshBackgroundConfig(allocator, codex_home, cfg);
+    _ = try waitForRefreshBackgroundStop(allocator, codex_home);
     try printRefreshBgLine("Background refresh disabled.\n");
 }
 
@@ -204,6 +214,34 @@ fn runRefreshBackground(allocator: std.mem.Allocator, codex_home: []const u8) !v
         _ = refreshOneBackgroundAccount(allocator, codex_home, usage_api.fetchUsageForAuthPathDetailed) catch {};
         if (!(try sleepRefreshIntervalOrDisabled(allocator, codex_home, selectBackgroundRefreshIntervalSeconds(cfg, randomSeed())))) return;
     }
+}
+
+fn waitForRefreshBackgroundStop(allocator: std.mem.Allocator, codex_home: []const u8) !bool {
+    var attempts: usize = 0;
+    while (attempts < 100) : (attempts += 1) {
+        if (try canAcquireRefreshBackgroundLock(allocator, codex_home)) return true;
+        try app_runtime.io().sleep(.fromMilliseconds(100), .awake);
+    }
+    return false;
+}
+
+fn canAcquireRefreshBackgroundLock(allocator: std.mem.Allocator, codex_home: []const u8) !bool {
+    try registry.ensureAccountsDir(allocator, codex_home);
+    const lock_path = try refreshBackgroundLockPath(allocator, codex_home);
+    defer allocator.free(lock_path);
+
+    var lock_file = std.Io.Dir.cwd().createFile(app_runtime.io(), lock_path, .{
+        .read = true,
+        .truncate = false,
+        .lock = .exclusive,
+        .lock_nonblocking = true,
+        .permissions = registry.private_file_permissions,
+    }) catch |err| switch (err) {
+        error.WouldBlock => return false,
+        else => return err,
+    };
+    lock_file.close(app_runtime.io());
+    return true;
 }
 
 pub fn selectBackgroundRefreshIntervalSeconds(cfg: RefreshBackgroundConfig, seed: u64) u16 {

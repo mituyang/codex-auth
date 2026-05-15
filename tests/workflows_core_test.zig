@@ -495,6 +495,8 @@ test "Scenario: Given api usage refresh for list and switch when refreshing fore
     try std.testing.expect(state.outcomes[0].updated);
     try std.testing.expectEqual(@as(?u16, 403), state.outcomes[1].status_code);
     try std.testing.expect(state.outcomes[2].unchanged);
+    try std.testing.expect(reg.accounts.items[2].last_usage_at != null);
+    try std.testing.expect(reg.accounts.items[2].last_usage_at.? > 10);
 
     try std.testing.expectEqual(@as(?registry.PlanType, .team), reg.accounts.items[0].last_usage.?.plan_type);
     try std.testing.expectEqual(@as(f64, 18), reg.accounts.items[0].last_usage.?.primary.?.used_percent);

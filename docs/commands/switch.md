@@ -17,6 +17,7 @@ codex-auth switch <query>
 - Click a table header to sort by that column; click the same header again to reverse the direction.
 - `--api` forces foreground remote refresh before rendering.
 - `--skip-api` renders from stored data and local-only active-account refresh where available.
+- `codex-auth config switch --skip-api` makes foreground commands that support `--skip-api` default to local-only mode.
 
 ## Live Switch
 

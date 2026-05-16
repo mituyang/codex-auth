@@ -4,6 +4,7 @@ const cli = @import("../cli/root.zig");
 const format = @import("../tui/table.zig");
 const registry = @import("../registry/root.zig");
 const account_names = @import("account_names.zig");
+const foreground_api_config = @import("foreground_api_config.zig");
 const live_flow = @import("live.zig");
 const preflight = @import("preflight.zig");
 const usage_refresh = @import("usage.zig");
@@ -21,6 +22,7 @@ const switchLiveRuntimeMaybeTakeUpdatedDisplay = live_flow.switchLiveRuntimeMayb
 const switchLiveRuntimeBuildStatusLine = live_flow.switchLiveRuntimeBuildStatusLine;
 
 pub fn handleList(allocator: std.mem.Allocator, codex_home: []const u8, opts: cli.types.ListOptions) !void {
+    const effective_api_mode = try foreground_api_config.resolveForegroundApiMode(allocator, codex_home, opts.api_mode);
     if (opts.live) {
         try ensureLiveTty(.list);
         const live_allocator = std.heap.smp_allocator;
@@ -28,7 +30,7 @@ pub fn handleList(allocator: std.mem.Allocator, codex_home: []const u8, opts: cl
             live_allocator,
             codex_home,
             .list,
-            opts.api_mode,
+            effective_api_mode,
         );
         var initial_display: ?cli.live.OwnedSwitchSelectionDisplay = loaded.display;
         errdefer if (initial_display) |*display| display.deinit(live_allocator);
@@ -37,8 +39,8 @@ pub fn handleList(allocator: std.mem.Allocator, codex_home: []const u8, opts: cl
             live_allocator,
             codex_home,
             .list,
-            opts.api_mode,
-            opts.api_mode == .force_api,
+            effective_api_mode,
+            effective_api_mode == .force_api,
             loaded.policy,
             loaded.refresh_error_name,
         );
@@ -69,8 +71,8 @@ pub fn handleList(allocator: std.mem.Allocator, codex_home: []const u8, opts: cl
         try registry.saveRegistry(allocator, codex_home, &reg);
     }
 
-    const usage_api_enabled = apiModeUsesApi(reg.api.usage, opts.api_mode);
-    const account_api_enabled = apiModeUsesApi(reg.api.account, opts.api_mode) and !opts.active_only;
+    const usage_api_enabled = apiModeUsesApi(reg.api.usage, effective_api_mode);
+    const account_api_enabled = apiModeUsesApi(reg.api.account, effective_api_mode) and !opts.active_only;
 
     try ensureForegroundNodeAvailableWithApiEnabled(
         allocator,

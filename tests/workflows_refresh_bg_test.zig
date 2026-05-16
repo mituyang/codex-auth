@@ -4,6 +4,8 @@ const usage_api = @import("codex_auth").api.usage;
 const registry = @import("codex_auth").registry;
 const refresh_bg = @import("codex_auth").workflows.refresh_bg;
 
+var retry_fetch_count: usize = 0;
+
 fn makeRegistry() registry.Registry {
     return .{
         .schema_version = registry.current_schema_version,
@@ -171,4 +173,70 @@ test "background refresh updates last activity when api snapshot is unchanged" {
     try std.testing.expectEqual(@as(usize, 1), loaded.accounts.items.len);
     try std.testing.expect(loaded.accounts.items[0].last_usage_at != null);
     try std.testing.expect(loaded.accounts.items[0].last_usage_at.? > 1);
+}
+
+test "background refresh retries failed fetches and updates on retry success" {
+    const gpa = std.testing.allocator;
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const codex_home = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(codex_home);
+
+    var reg = makeRegistry();
+    defer reg.deinit(gpa);
+    try appendAccount(gpa, &reg, 0, .chatgpt, 1);
+
+    retry_fetch_count = 0;
+    const Fetcher = struct {
+        fn fetch(_: std.mem.Allocator, _: []const u8) !usage_api.UsageFetchResult {
+            retry_fetch_count += 1;
+            if (retry_fetch_count < 3) return error.RequestFailed;
+            return .{
+                .snapshot = testSnapshot(),
+                .status_code = 200,
+            };
+        }
+    };
+
+    const result = try refresh_bg.refreshBackgroundAccountAtIndexWithRetry(gpa, codex_home, &reg, 0, Fetcher.fetch, 3, 0);
+    try std.testing.expect(result.attempted);
+    try std.testing.expect(result.updated);
+    try std.testing.expect(!result.failed);
+    try std.testing.expectEqual(@as(u8, 3), result.attempts);
+    try std.testing.expectEqual(@as(usize, 3), retry_fetch_count);
+    try std.testing.expect(reg.accounts.items[0].last_usage_at != null);
+    try std.testing.expect(reg.accounts.items[0].last_usage_at.? > 1);
+}
+
+test "background refresh stops after three retries when fetch keeps failing" {
+    const gpa = std.testing.allocator;
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const codex_home = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(codex_home);
+
+    var reg = makeRegistry();
+    defer reg.deinit(gpa);
+    try appendAccount(gpa, &reg, 0, .chatgpt, 1);
+
+    retry_fetch_count = 0;
+    const Fetcher = struct {
+        fn fetch(_: std.mem.Allocator, _: []const u8) !usage_api.UsageFetchResult {
+            retry_fetch_count += 1;
+            return .{
+                .snapshot = null,
+                .status_code = 500,
+            };
+        }
+    };
+
+    const result = try refresh_bg.refreshBackgroundAccountAtIndexWithRetry(gpa, codex_home, &reg, 0, Fetcher.fetch, 3, 0);
+    try std.testing.expect(result.attempted);
+    try std.testing.expect(!result.updated);
+    try std.testing.expect(result.failed);
+    try std.testing.expectEqual(@as(u8, 4), result.attempts);
+    try std.testing.expectEqual(@as(usize, 4), retry_fetch_count);
+    try std.testing.expectEqual(@as(?i64, 1), reg.accounts.items[0].last_usage_at);
 }

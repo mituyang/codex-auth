@@ -56,6 +56,7 @@ pub fn writeHelp(
     try writeCommandSummary(out, use_color, "config", "Manage configuration");
     try writeCommandDetail(out, use_color, "config live --interval <seconds>");
     try writeCommandDetail(out, use_color, "config refresh --interval <seconds|range>");
+    try writeCommandDetail(out, use_color, "config switch --api|--skip-api");
 
     try out.writeAll("\n");
     if (use_color) try out.writeAll(style.ansi.cyan);
@@ -219,6 +220,7 @@ fn writeUsageLines(out: *std.Io.Writer, topic: HelpTopic) !void {
         .config => {
             try out.writeAll("  codex-auth config live --interval <seconds>\n");
             try out.writeAll("  codex-auth config refresh --interval <seconds|range>\n");
+            try out.writeAll("  codex-auth config switch --api|--skip-api\n");
         },
     }
 }
@@ -289,6 +291,8 @@ fn writeOptionLines(out: *std.Io.Writer, topic: HelpTopic) !void {
             try out.writeAll("                    Set the live TUI refresh interval from 5 to 3600 seconds.\n");
             try out.writeAll("  refresh --interval <seconds|range>\n");
             try out.writeAll("                    Set the background refresh interval or range from 5 to 3600 seconds.\n");
+            try out.writeAll("  switch --api|--skip-api\n");
+            try out.writeAll("                    Set whether foreground commands use APIs by default.\n");
         },
         else => {},
     }
@@ -360,6 +364,8 @@ fn writeExampleLines(out: *std.Io.Writer, topic: HelpTopic) !void {
             try out.writeAll("  codex-auth config live --interval 60\n");
             try out.writeAll("  codex-auth config refresh --interval 60\n");
             try out.writeAll("  codex-auth config refresh --interval 60-70\n");
+            try out.writeAll("  codex-auth config switch --skip-api\n");
+            try out.writeAll("  codex-auth config switch --api\n");
         },
     }
 }

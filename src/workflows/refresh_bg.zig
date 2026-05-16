@@ -9,6 +9,8 @@ const usage_api = @import("../api/usage.zig");
 const config_file_name = "refresh-bg.json";
 const lock_file_name = "refresh-bg.lock";
 const max_stale_candidate_count: usize = 5;
+pub const background_refresh_max_retries: u8 = 3;
+pub const background_refresh_retry_delay_seconds: u16 = 10;
 
 pub const RefreshBackgroundConfig = struct {
     enabled: bool = false,
@@ -27,6 +29,7 @@ pub const BackgroundRefreshAttempt = struct {
     attempted: bool = false,
     updated: bool = false,
     failed: bool = false,
+    attempts: u8 = 0,
 };
 
 pub const UsageFetcher = *const fn (
@@ -278,7 +281,35 @@ pub fn refreshOneBackgroundAccount(
     }
 
     const account_idx = selectBackgroundRefreshAccountIndex(&reg, randomSeed()) orelse return .{};
-    return refreshBackgroundAccountAtIndex(allocator, codex_home, &reg, account_idx, usage_fetcher);
+    return refreshBackgroundAccountAtIndexWithRetry(
+        allocator,
+        codex_home,
+        &reg,
+        account_idx,
+        usage_fetcher,
+        background_refresh_max_retries,
+        background_refresh_retry_delay_seconds,
+    );
+}
+
+pub fn refreshBackgroundAccountAtIndexWithRetry(
+    allocator: std.mem.Allocator,
+    codex_home: []const u8,
+    reg: *registry.Registry,
+    account_idx: usize,
+    usage_fetcher: UsageFetcher,
+    max_retries: u8,
+    retry_delay_seconds: u16,
+) !BackgroundRefreshAttempt {
+    var retry_count: u8 = 0;
+    while (true) {
+        var result = try refreshBackgroundAccountAtIndex(allocator, codex_home, reg, account_idx, usage_fetcher);
+        result.attempts = retry_count + 1;
+        if (!result.failed) return result;
+        if (retry_count >= max_retries) return result;
+        retry_count += 1;
+        if (!(try sleepRefreshIntervalOrDisabled(allocator, codex_home, retry_delay_seconds))) return result;
+    }
 }
 
 pub fn refreshBackgroundAccountAtIndex(
@@ -297,6 +328,7 @@ pub fn refreshBackgroundAccountAtIndex(
         .account_index = account_idx,
         .attempted = true,
         .failed = true,
+        .attempts = 1,
     };
     if (fetch_result.snapshot) |snapshot| {
         registry.updateUsage(allocator, reg, account_key, snapshot);
@@ -305,12 +337,15 @@ pub fn refreshBackgroundAccountAtIndex(
             .account_index = account_idx,
             .attempted = true,
             .updated = true,
+            .attempts = 1,
         };
     }
 
     return .{
         .account_index = account_idx,
         .attempted = true,
+        .failed = true,
+        .attempts = 1,
     };
 }
 

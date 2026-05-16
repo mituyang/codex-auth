@@ -13,7 +13,7 @@ codex-auth remove --all
 
 `codex-auth remove` opens the remove picker.
 
-- The default picker stays local-only so deletion is not blocked by refresh work.
+- The default picker performs foreground API refresh unless `codex-auth config switch --skip-api` is set.
 - `--api` attempts a best-effort foreground refresh for picker display.
 - `--skip-api` explicitly forbids remote refresh.
 - Click a table header to sort by that column; click the same header again to reverse the direction.

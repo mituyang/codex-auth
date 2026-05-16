@@ -24,6 +24,7 @@ codex-auth list --skip-api
 - `--active` refreshes usage only for the active account before rendering and skips account-name API refresh. Other rows use stored registry snapshots.
 - `--api` is accepted as an explicit equivalent to default mode.
 - `--skip-api` forbids remote API calls for this command.
+- `codex-auth config switch --skip-api` makes plain `list` default to local-only mode.
 - `--live` keeps refreshing the terminal view and requires a TTY.
 - In a TTY, plain `list` opens a sortable table without scheduled live refresh. Without a TTY, it prints a static table.
 

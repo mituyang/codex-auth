@@ -341,6 +341,7 @@ test "Scenario: Given help when rendering then login and command help notes are 
     try std.testing.expect(std.mem.indexOf(u8, help, "refresh-bg <enable|disable>") != null);
     try std.testing.expect(std.mem.indexOf(u8, help, "config live --interval <seconds>") != null);
     try std.testing.expect(std.mem.indexOf(u8, help, "config refresh --interval <seconds|range>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, help, "config switch --api|--skip-api") != null);
     try std.testing.expect(std.mem.indexOf(u8, help, "auto enable") == null);
 }
 
@@ -431,11 +432,15 @@ test "Scenario: Given config help when rendering then live mode is explained" {
     const config_help = config_aw.written();
     try std.testing.expect(std.mem.indexOf(u8, config_help, "codex-auth config live --interval <seconds>") != null);
     try std.testing.expect(std.mem.indexOf(u8, config_help, "codex-auth config refresh --interval <seconds|range>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, config_help, "codex-auth config switch --api|--skip-api") != null);
     try std.testing.expect(std.mem.indexOf(u8, config_help, "live --interval <seconds>\n                    Set the live TUI refresh interval from 5 to 3600 seconds.") != null);
     try std.testing.expect(std.mem.indexOf(u8, config_help, "refresh --interval <seconds|range>\n                    Set the background refresh interval or range from 5 to 3600 seconds.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, config_help, "switch --api|--skip-api\n                    Set whether foreground commands use APIs by default.") != null);
     try std.testing.expect(std.mem.indexOf(u8, config_help, "codex-auth config live --interval 60") != null);
     try std.testing.expect(std.mem.indexOf(u8, config_help, "codex-auth config refresh --interval 60") != null);
     try std.testing.expect(std.mem.indexOf(u8, config_help, "codex-auth config refresh --interval 60-70") != null);
+    try std.testing.expect(std.mem.indexOf(u8, config_help, "codex-auth config switch --skip-api") != null);
+    try std.testing.expect(std.mem.indexOf(u8, config_help, "codex-auth config switch --api") != null);
     try std.testing.expect(std.mem.indexOf(u8, config_help, "auto") == null);
 }
 
@@ -593,6 +598,42 @@ test "Scenario: Given config refresh interval range when parsing then range is p
     }
 }
 
+test "Scenario: Given config switch skip api when parsing then mode is preserved" {
+    const gpa = std.testing.allocator;
+    const args = [_][:0]const u8{ "codex-auth", "config", "switch", "--skip-api" };
+    var result = try cli.commands.parseArgs(gpa, &args);
+    defer cli.commands.freeParseResult(gpa, &result);
+
+    switch (result) {
+        .command => |cmd| switch (cmd) {
+            .config => |opts| switch (opts) {
+                .switch_account => |switch_opts| try std.testing.expectEqual(cli.types.ApiMode.skip_api, switch_opts.api_mode),
+                else => return error.TestExpectedEqual,
+            },
+            else => return error.TestExpectedEqual,
+        },
+        else => return error.TestExpectedEqual,
+    }
+}
+
+test "Scenario: Given config switch api when parsing then mode is preserved" {
+    const gpa = std.testing.allocator;
+    const args = [_][:0]const u8{ "codex-auth", "config", "switch", "--api" };
+    var result = try cli.commands.parseArgs(gpa, &args);
+    defer cli.commands.freeParseResult(gpa, &result);
+
+    switch (result) {
+        .command => |cmd| switch (cmd) {
+            .config => |opts| switch (opts) {
+                .switch_account => |switch_opts| try std.testing.expectEqual(cli.types.ApiMode.force_api, switch_opts.api_mode),
+                else => return error.TestExpectedEqual,
+            },
+            else => return error.TestExpectedEqual,
+        },
+        else => return error.TestExpectedEqual,
+    }
+}
+
 test "Scenario: Given config live invalid interval when parsing then usage error is returned" {
     const gpa = std.testing.allocator;
     const args = [_][:0]const u8{ "codex-auth", "config", "live", "--interval", "4" };
@@ -627,6 +668,15 @@ test "Scenario: Given config refresh invalid interval when parsing then usage er
     defer cli.commands.freeParseResult(gpa, &result);
 
     try expectUsageError(result, .config, "`--interval` must be an integer or range from 5 to 3600 seconds.");
+}
+
+test "Scenario: Given config switch unknown flag when parsing then usage error is returned" {
+    const gpa = std.testing.allocator;
+    const args = [_][:0]const u8{ "codex-auth", "config", "switch", "--live" };
+    var result = try cli.commands.parseArgs(gpa, &args);
+    defer cli.commands.freeParseResult(gpa, &result);
+
+    try expectUsageError(result, .config, "unknown flag `--live` for `config switch`.");
 }
 
 test "Scenario: Given refresh background action when parsing then action is preserved" {

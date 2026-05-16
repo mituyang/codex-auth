@@ -15,6 +15,9 @@ pub fn parse(allocator: std.mem.Allocator, args: []const [:0]const u8) !types.Pa
     if (std.mem.eql(u8, scope, "refresh")) {
         return parseRefresh(allocator, args[1..]);
     }
+    if (std.mem.eql(u8, scope, "switch")) {
+        return parseSwitch(allocator, args[1..]);
+    }
     return common.usageErrorResult(allocator, .config, "unknown config section `{s}`.", .{scope});
 }
 
@@ -78,4 +81,22 @@ fn parseRefreshIntervalPart(raw: []const u8) !u16 {
     const interval = try std.fmt.parseInt(u16, raw, 10);
     if (interval < 5 or interval > 3600) return error.InvalidIntervalRange;
     return interval;
+}
+
+fn parseSwitch(allocator: std.mem.Allocator, args: []const [:0]const u8) !types.ParseResult {
+    if (args.len == 1 and common.isHelpFlag(std.mem.sliceTo(args[0], 0))) {
+        return .{ .command = .{ .help = .config } };
+    }
+    if (args.len != 1) return common.usageErrorResult(allocator, .config, "`config switch` requires `--api` or `--skip-api`.", .{});
+    const flag = std.mem.sliceTo(args[0], 0);
+    if (std.mem.eql(u8, flag, "--api")) {
+        return .{ .command = .{ .config = .{ .switch_account = .{ .api_mode = .force_api } } } };
+    }
+    if (std.mem.eql(u8, flag, "--skip-api")) {
+        return .{ .command = .{ .config = .{ .switch_account = .{ .api_mode = .skip_api } } } };
+    }
+    if (std.mem.startsWith(u8, flag, "-")) {
+        return common.usageErrorResult(allocator, .config, "unknown flag `{s}` for `config switch`.", .{flag});
+    }
+    return common.usageErrorResult(allocator, .config, "unknown argument `{s}` for `config switch`.", .{flag});
 }

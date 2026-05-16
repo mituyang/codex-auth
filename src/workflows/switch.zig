@@ -1,6 +1,7 @@
 const std = @import("std");
 const cli = @import("../cli/root.zig");
 const registry = @import("../registry/root.zig");
+const foreground_api_config = @import("foreground_api_config.zig");
 const live_flow = @import("live.zig");
 const preflight = @import("preflight.zig");
 const query_mod = @import("query.zig");
@@ -55,19 +56,20 @@ pub fn handleSwitch(allocator: std.mem.Allocator, codex_home: []const u8, opts: 
         return;
     }
 
+    const effective_api_mode = try foreground_api_config.resolveForegroundApiMode(allocator, codex_home, opts.api_mode);
     if (!opts.live) {
-        var loaded = if (opts.api_mode == .skip_api)
+        var loaded = if (effective_api_mode == .skip_api)
             try loadStoredSwitchSelectionDisplay(
                 allocator,
                 codex_home,
                 .switch_account,
-                opts.api_mode,
+                effective_api_mode,
             )
         else
             try loadSwitchSelectionDisplay(
                 allocator,
                 codex_home,
-                opts.api_mode,
+                effective_api_mode,
                 .switch_account,
                 true,
             );
@@ -94,12 +96,12 @@ pub fn handleSwitch(allocator: std.mem.Allocator, codex_home: []const u8, opts: 
 
     try ensureLiveTty(.switch_account);
     const live_allocator = std.heap.smp_allocator;
-    const strict_refresh = opts.api_mode == .force_api;
+    const strict_refresh = effective_api_mode == .force_api;
     const loaded = try loadInitialLiveSelectionDisplay(
         live_allocator,
         codex_home,
         .switch_account,
-        opts.api_mode,
+        effective_api_mode,
     );
     var initial_display: ?cli.live.OwnedSwitchSelectionDisplay = loaded.display;
     errdefer if (initial_display) |*display| display.deinit(live_allocator);
@@ -108,7 +110,7 @@ pub fn handleSwitch(allocator: std.mem.Allocator, codex_home: []const u8, opts: 
         live_allocator,
         codex_home,
         .switch_account,
-        opts.api_mode,
+        effective_api_mode,
         strict_refresh,
         loaded.policy,
         loaded.refresh_error_name,

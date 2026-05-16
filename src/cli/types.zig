@@ -46,9 +46,13 @@ pub const RefreshOptions = struct {
     interval_min_seconds: u16,
     interval_max_seconds: u16,
 };
+pub const SwitchConfigOptions = struct {
+    api_mode: ApiMode,
+};
 pub const ConfigOptions = union(enum) {
     live: LiveOptions,
     refresh: RefreshOptions,
+    switch_account: SwitchConfigOptions,
 };
 pub const RefreshBgAction = enum { enable, disable, run };
 pub const RefreshBgOptions = struct {

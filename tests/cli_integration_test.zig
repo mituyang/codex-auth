@@ -273,6 +273,12 @@ fn prependPathEntryAlloc(allocator: std.mem.Allocator, entry: []const u8) ![]u8 
     return try std.fmt.allocPrint(allocator, "{s}{c}{s}", .{ entry, fs.path.delimiter, inherited_path });
 }
 
+fn prependTwoPathEntriesAlloc(allocator: std.mem.Allocator, first: []const u8, second: []const u8) ![]u8 {
+    const with_second = try prependPathEntryAlloc(allocator, second);
+    defer allocator.free(with_second);
+    return try std.fmt.allocPrint(allocator, "{s}{c}{s}", .{ first, fs.path.delimiter, with_second });
+}
+
 fn runCliWithIsolatedHomeAndPathAndApiKeyNode(
     allocator: std.mem.Allocator,
     project_root: []const u8,
@@ -300,6 +306,39 @@ fn runCliWithIsolatedHomeAndPathAndApiKeyNode(
 
     // On Windows, point to the compiled fake-node.exe via a relative path so
     // the access check uses cwd().access() which works in the test runner.
+    if (builtin.os.tag == .windows) {
+        try env_map.put("CODEX_AUTH_NODE_EXECUTABLE", "zig-out\\bin\\fake-node.exe");
+    }
+
+    return try runCapture(allocator, project_root, &env_map, argv.items);
+}
+
+fn runCliWithIsolatedHomeAndCodexHomeAndPathAndApiKeyNode(
+    allocator: std.mem.Allocator,
+    project_root: []const u8,
+    home_root: []const u8,
+    codex_home: []const u8,
+    path_override: []const u8,
+    fake_node_response_dir: []const u8,
+    args: []const []const u8,
+) !std.process.RunResult {
+    const exe_path = try builtCliPathAlloc(allocator, project_root);
+    defer allocator.free(exe_path);
+
+    var argv = std.ArrayList([]const u8).empty;
+    defer argv.deinit(allocator);
+    try argv.append(allocator, exe_path);
+    try argv.appendSlice(allocator, args);
+
+    var env_map = try getEnvMap(allocator);
+    defer env_map.deinit();
+    try env_map.put("HOME", home_root);
+    try env_map.put("USERPROFILE", home_root);
+    try env_map.put("CODEX_HOME", codex_home);
+    try env_map.put("PATH", path_override);
+    try env_map.put("CODEX_AUTH_SKIP_SERVICE_RECONCILE", "1");
+    try env_map.put("CODEX_FAKE_NODE_RESPONSE_DIR", fake_node_response_dir);
+
     if (builtin.os.tag == .windows) {
         try env_map.put("CODEX_AUTH_NODE_EXECUTABLE", "zig-out\\bin\\fake-node.exe");
     }
@@ -728,17 +767,21 @@ test "Scenario: Given device auth login when running login then it forwards the 
     defer gpa.free(fake_auth);
     try tmp.dir.writeFile(.{ .sub_path = "fake-auth.json", .data = fake_auth });
     try writeSuccessfulFakeCodex(tmp.dir);
+    try writeApiKeyFlowFakeNode(gpa, tmp.dir, project_root);
 
     const fake_bin_path = try fs.path.join(gpa, &[_][]const u8{ home_root, "fake-bin" });
     defer gpa.free(fake_bin_path);
-    const path_override = try prependPathEntryAlloc(gpa, fake_bin_path);
+    const fake_node_dir = try tmp.dir.realpathAlloc(gpa, "fake-node-bin");
+    defer gpa.free(fake_node_dir);
+    const path_override = try prependTwoPathEntriesAlloc(gpa, fake_bin_path, fake_node_dir);
     defer gpa.free(path_override);
 
-    const result = try runCliWithIsolatedHomeAndPath(
+    const result = try runCliWithIsolatedHomeAndPathAndApiKeyNode(
         gpa,
         project_root,
         home_root,
         path_override,
+        fake_node_dir,
         &[_][]const u8{ "login", "--device-auth" },
     );
     defer gpa.free(result.stdout);
@@ -761,6 +804,9 @@ test "Scenario: Given device auth login when running login then it forwards the 
     try std.testing.expectEqual(@as(usize, 1), loaded.accounts.items.len);
     try std.testing.expect(loaded.active_account_key != null);
     try std.testing.expect(std.mem.eql(u8, loaded.accounts.items[0].email, expected_email));
+    try std.testing.expect(loaded.accounts.items[0].last_usage != null);
+    try std.testing.expectEqual(@as(f64, 12), loaded.accounts.items[0].last_usage.?.primary.?.used_percent);
+    try std.testing.expectEqual(@as(f64, 34), loaded.accounts.items[0].last_usage.?.secondary.?.used_percent);
 
     const expected_account_key = try fixtures.accountKeyForEmailAlloc(gpa, expected_email);
     defer gpa.free(expected_account_key);
@@ -801,18 +847,22 @@ test "Scenario: Given CODEX_HOME override when running login then it stores auth
     defer gpa.free(fake_auth);
     try tmp.dir.writeFile(.{ .sub_path = "fake-auth.json", .data = fake_auth });
     try writeSuccessfulFakeCodex(tmp.dir);
+    try writeApiKeyFlowFakeNode(gpa, tmp.dir, project_root);
 
     const fake_bin_path = try fs.path.join(gpa, &[_][]const u8{ home_root, "fake-bin" });
     defer gpa.free(fake_bin_path);
-    const path_override = try prependPathEntryAlloc(gpa, fake_bin_path);
+    const fake_node_dir = try tmp.dir.realpathAlloc(gpa, "fake-node-bin");
+    defer gpa.free(fake_node_dir);
+    const path_override = try prependTwoPathEntriesAlloc(gpa, fake_bin_path, fake_node_dir);
     defer gpa.free(path_override);
 
-    const result = try runCliWithIsolatedHomeAndCodexHomeAndPath(
+    const result = try runCliWithIsolatedHomeAndCodexHomeAndPathAndApiKeyNode(
         gpa,
         project_root,
         home_root,
         custom_codex_home,
         path_override,
+        fake_node_dir,
         &[_][]const u8{ "login", "--device-auth" },
     );
     defer gpa.free(result.stdout);

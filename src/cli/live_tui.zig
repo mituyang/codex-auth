@@ -6,6 +6,7 @@ const render = @import("render.zig");
 const row_data = @import("rows.zig");
 const selection = @import("selection.zig");
 const table_layout = @import("table_layout.zig");
+const pagination = @import("../tui/pagination.zig");
 const tui_mod = @import("tui.zig");
 
 pub const tick_ms = tui_mod.live_ui_tick_ms;
@@ -40,14 +41,44 @@ test "list viewport keys keep paging and accept alternate-scroll wheel arrows" {
     try std.testing.expect(!applyListViewportKey(row_count, max_rows, &viewport_start, wheel_rows, .{ .byte = 'k' }));
     try std.testing.expectEqual(@as(usize, 9), viewport_start);
 
-    try std.testing.expect(applyListViewportKey(row_count, max_rows, &viewport_start, wheel_rows, .page_down));
-    try std.testing.expectEqual(@as(usize, 29), viewport_start);
-    try std.testing.expect(applyListViewportKey(row_count, max_rows, &viewport_start, wheel_rows, .page_up));
-    try std.testing.expectEqual(@as(usize, 9), viewport_start);
+    try std.testing.expect(applyListViewportKey(row_count, max_rows, &viewport_start, wheel_rows, .page_right));
+    try std.testing.expectEqual(@as(usize, 20), viewport_start);
+    try std.testing.expect(applyListViewportKey(row_count, max_rows, &viewport_start, wheel_rows, .page_left));
+    try std.testing.expectEqual(@as(usize, 0), viewport_start);
     try std.testing.expect(applyListViewportKey(row_count, max_rows, &viewport_start, wheel_rows, .home));
     try std.testing.expectEqual(@as(usize, 0), viewport_start);
     try std.testing.expect(applyListViewportKey(row_count, max_rows, &viewport_start, wheel_rows, .end));
-    try std.testing.expectEqual(@as(usize, 85), viewport_start);
+    try std.testing.expectEqual(@as(usize, 100), viewport_start);
+}
+
+test "list row viewport paging uses selectable account page boundaries" {
+    var row_slots: [26]row_data.SwitchRow = undefined;
+    var selectable_row_indices: [25]usize = undefined;
+    for (&selectable_row_indices, 0..) |*slot, idx| slot.* = idx + 1;
+    const rows = row_data.SwitchRows{
+        .items = &row_slots,
+        .selectable_row_indices = &selectable_row_indices,
+        .widths = .{
+            .email = 10,
+            .plan = 4,
+            .rate_5h = 2,
+            .rate_week = 6,
+            .last = 4,
+        },
+    };
+    const max_rows: usize = 20;
+    const wheel_rows: usize = mouseWheelRows(max_rows);
+
+    var viewport_start: usize = 6;
+    try std.testing.expect(applyListRowsViewportKey(&rows, max_rows, &viewport_start, wheel_rows, .page_right));
+    try std.testing.expectEqual(@as(usize, 21), viewport_start);
+
+    viewport_start = 24;
+    try std.testing.expect(applyListRowsViewportKey(&rows, max_rows, &viewport_start, wheel_rows, .page_left));
+    try std.testing.expectEqual(@as(usize, 1), viewport_start);
+
+    try std.testing.expect(applyListRowsViewportKey(&rows, max_rows, &viewport_start, wheel_rows, .end));
+    try std.testing.expectEqual(@as(usize, 21), viewport_start);
 }
 
 pub fn nowSecond() i64 {
@@ -91,7 +122,8 @@ pub fn listFixedLines(status_line: []const u8) usize {
 }
 
 pub fn maxTableRows(terminal_rows: usize, fixed_lines: usize) usize {
-    return if (terminal_rows <= fixed_lines) 1 else terminal_rows - fixed_lines;
+    const available = if (terminal_rows <= fixed_lines) 1 else terminal_rows - fixed_lines;
+    return @min(available, pagination.default_account_page_size);
 }
 
 pub fn selectedViewport(
@@ -135,7 +167,7 @@ pub fn listViewport(
     viewport_start: *usize,
 ) render.LiveListViewport {
     const max_rows = maxTableRows(terminal_rows, fixed_lines);
-    viewport_start.* = render.clampLiveViewportStart(row_count, max_rows, viewport_start.*);
+    viewport_start.* = @min(viewport_start.*, row_count);
     return .{
         .start_row = viewport_start.*,
         .max_rows = max_rows,
@@ -173,6 +205,31 @@ pub fn scrollListViewportBy(
     }
 }
 
+fn lastPageStart(item_count: usize, page_size: usize) usize {
+    if (item_count == 0 or page_size == 0) return 0;
+    return ((item_count - 1) / page_size) * page_size;
+}
+
+fn pageStartForOffset(offset: usize, page_size: usize) usize {
+    if (page_size == 0) return 0;
+    return (offset / page_size) * page_size;
+}
+
+pub fn pageStartForDirection(
+    item_count: usize,
+    page_size: usize,
+    offset: usize,
+    direction: ScrollDirection,
+) usize {
+    if (item_count == 0 or page_size == 0) return 0;
+    const current_page_start = pageStartForOffset(@min(offset, item_count - 1), page_size);
+    const last_page_start = lastPageStart(item_count, page_size);
+    return switch (direction) {
+        .up => current_page_start -| page_size,
+        .down => @min(last_page_start, current_page_start + page_size),
+    };
+}
+
 pub fn applyListViewportKey(
     row_count: usize,
     max_rows: usize,
@@ -189,12 +246,12 @@ pub fn applyListViewportKey(
             scrollListViewportBy(row_count, max_rows, viewport_start, .down, wheel_rows);
             return true;
         },
-        .page_up => {
-            scrollListViewportBy(row_count, max_rows, viewport_start, .up, max_rows);
+        .page_up, .page_left => {
+            viewport_start.* = pageStartForDirection(row_count, max_rows, viewport_start.*, .up);
             return true;
         },
-        .page_down => {
-            scrollListViewportBy(row_count, max_rows, viewport_start, .down, max_rows);
+        .page_down, .page_right => {
+            viewport_start.* = pageStartForDirection(row_count, max_rows, viewport_start.*, .down);
             return true;
         },
         .home => {
@@ -202,7 +259,7 @@ pub fn applyListViewportKey(
             return true;
         },
         .end => {
-            viewport_start.* = render.clampLiveViewportStart(row_count, max_rows, row_count);
+            viewport_start.* = lastPageStart(row_count, max_rows);
             return true;
         },
         .scroll_up => {
@@ -227,12 +284,67 @@ pub fn applyListViewportKey(
                 return true;
             },
             'G' => {
-                viewport_start.* = render.clampLiveViewportStart(row_count, max_rows, row_count);
+                viewport_start.* = lastPageStart(row_count, max_rows);
                 return true;
             },
             else => return false,
         },
         else => return false,
+    }
+}
+
+fn selectableOffsetForViewportStart(rows: *const row_data.SwitchRows, viewport_start: usize) ?usize {
+    if (rows.selectable_row_indices.len == 0) return null;
+    for (rows.selectable_row_indices, 0..) |row_idx, selectable_idx| {
+        if (row_idx >= viewport_start) return selectable_idx;
+    }
+    return rows.selectable_row_indices.len - 1;
+}
+
+fn selectablePageRowStartForDirection(
+    rows: *const row_data.SwitchRows,
+    page_size: usize,
+    viewport_start: usize,
+    direction: ScrollDirection,
+) ?usize {
+    const selectable_idx = selectableOffsetForViewportStart(rows, viewport_start) orelse return null;
+    const page_idx = pageSelectableIndex(rows.selectable_row_indices.len, page_size, selectable_idx, direction) orelse return null;
+    return rows.selectable_row_indices[page_idx];
+}
+
+fn selectableLastPageRowStart(rows: *const row_data.SwitchRows, page_size: usize) usize {
+    if (rows.selectable_row_indices.len == 0) return 0;
+    return rows.selectable_row_indices[lastPageStart(rows.selectable_row_indices.len, page_size)];
+}
+
+pub fn applyListRowsViewportKey(
+    rows: *const row_data.SwitchRows,
+    max_rows: usize,
+    viewport_start: *usize,
+    wheel_rows: usize,
+    key: tui_mod.TuiInputKey,
+) bool {
+    switch (key) {
+        .page_up, .page_left => {
+            viewport_start.* = selectablePageRowStartForDirection(rows, max_rows, viewport_start.*, .up) orelse 0;
+            return true;
+        },
+        .page_down, .page_right => {
+            viewport_start.* = selectablePageRowStartForDirection(rows, max_rows, viewport_start.*, .down) orelse 0;
+            return true;
+        },
+        .end => {
+            viewport_start.* = selectableLastPageRowStart(rows, max_rows);
+            return true;
+        },
+        .byte => |ch| switch (ch) {
+            'G' => {
+                viewport_start.* = selectableLastPageRowStart(rows, max_rows);
+                return true;
+            },
+            else => return applyListViewportKey(rows.items.len, max_rows, viewport_start, wheel_rows, key),
+        },
+        else => return applyListViewportKey(rows.items.len, max_rows, viewport_start, wheel_rows, key),
     }
 }
 
@@ -450,6 +562,31 @@ pub fn moveSelectedIndexBy(
         .up => selected_idx -| amount,
         .down => @min(last_idx, std.math.add(usize, selected_idx, amount) catch last_idx),
     };
+    if (next_idx == selected_idx) return false;
+    try picker.replaceSelectedAccountKeyForSelectable(allocator, selected_account_key, rows, reg, next_idx);
+    return true;
+}
+
+pub fn pageSelectableIndex(
+    selectable_count: usize,
+    page_size: usize,
+    selected_idx: usize,
+    direction: ScrollDirection,
+) ?usize {
+    if (selectable_count == 0 or page_size == 0 or selected_idx >= selectable_count) return null;
+    return pageStartForDirection(selectable_count, page_size, selected_idx, direction);
+}
+
+pub fn moveSelectedIndexToPage(
+    allocator: std.mem.Allocator,
+    selected_account_key: *?[]u8,
+    rows: *const row_data.SwitchRows,
+    reg: *registry.Registry,
+    direction: ScrollDirection,
+    page_size: usize,
+) !bool {
+    const selected_idx = (try resolveSelectedIndex(allocator, selected_account_key, rows, reg)) orelse return false;
+    const next_idx = pageSelectableIndex(rows.selectable_row_indices.len, page_size, selected_idx, direction) orelse return false;
     if (next_idx == selected_idx) return false;
     try picker.replaceSelectedAccountKeyForSelectable(allocator, selected_account_key, rows, reg, next_idx);
     return true;

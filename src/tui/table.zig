@@ -2,6 +2,7 @@ const std = @import("std");
 const app_runtime = @import("../core/runtime.zig");
 const builtin = @import("builtin");
 const display_rows = @import("display.zig");
+const pagination = @import("pagination.zig");
 const registry = @import("../registry/root.zig");
 const io_util = @import("../core/io_util.zig");
 const rate_limit = @import("rate_limit.zig");
@@ -140,26 +141,25 @@ pub fn writeAccountsTableWithUsageOverrides(
     const h4 = try truncateAlloc(header_last, widths[4]);
     defer std.heap.page_allocator.free(h4);
 
-    if (use_color) try out.writeAll(ansi.cyan);
-    try writeRepeat(out, ' ', prefix_len);
-    try writePadded(out, h0, widths[0]);
-    try out.writeAll("  ");
-    try writePadded(out, h1, widths[1]);
-    try out.writeAll("  ");
-    try writePadded(out, h2, widths[2]);
-    try out.writeAll("  ");
-    try writePadded(out, h3, widths[3]);
-    try out.writeAll("  ");
-    try writePadded(out, h4, widths[4]);
-    try out.writeAll("\n");
-    if (use_color) try out.writeAll(ansi.reset);
-    if (use_color) try out.writeAll(ansi.dim);
-    try writeRepeat(out, '-', listTotalWidth(&widths, prefix_len, sep_len));
-    try out.writeAll("\n");
-    if (use_color) try out.writeAll(ansi.reset);
+    const total_accounts = display.selectable_row_indices.len;
+    const total_pages = pagination.pageCount(total_accounts, pagination.default_account_page_size);
+    const paginate = pagination.shouldPaginate(total_accounts, pagination.default_account_page_size);
+
+    try writeAccountsTableHeader(out, use_color, widths, prefix_len, sep_len, .{ h0, h1, h2, h3, h4 });
 
     var selectable_counter: usize = 0;
+    var page_number: usize = 1;
+    var page_account_count: usize = 0;
+    var page_start_account: usize = 1;
     for (display.rows) |row| {
+        if (paginate and page_account_count == pagination.default_account_page_size) {
+            try writeAccountsPageFooter(out, use_color, page_number, total_pages, page_start_account, selectable_counter, total_accounts);
+            page_number += 1;
+            page_account_count = 0;
+            page_start_account = selectable_counter + 1;
+            try writeAccountsTableHeader(out, use_color, widths, prefix_len, sep_len, .{ h0, h1, h2, h3, h4 });
+        }
+
         if (row.account_index) |account_idx| {
             const rec = reg.accounts.items[account_idx];
             const plan = planDisplay(&rec, "-");
@@ -207,6 +207,7 @@ pub fn writeAccountsTableWithUsageOverrides(
             try out.writeAll("\n");
             if (use_color) try out.writeAll(ansi.reset);
             selectable_counter += 1;
+            page_account_count += 1;
         } else {
             const account_cell = try truncateAlloc(row.account_cell, widths[0]);
             defer std.heap.page_allocator.free(account_cell);
@@ -217,6 +218,56 @@ pub fn writeAccountsTableWithUsageOverrides(
             if (use_color) try out.writeAll(ansi.reset);
         }
     }
+    if (paginate) {
+        try writeAccountsPageFooter(out, use_color, page_number, total_pages, page_start_account, selectable_counter, total_accounts);
+    }
+}
+
+fn writeAccountsTableHeader(
+    out: *std.Io.Writer,
+    use_color: bool,
+    widths: [5]usize,
+    prefix_len: usize,
+    sep_len: usize,
+    headers: [5][]const u8,
+) !void {
+    if (use_color) try out.writeAll(ansi.cyan);
+    try writeRepeat(out, ' ', prefix_len);
+    try writePadded(out, headers[0], widths[0]);
+    try out.writeAll("  ");
+    try writePadded(out, headers[1], widths[1]);
+    try out.writeAll("  ");
+    try writePadded(out, headers[2], widths[2]);
+    try out.writeAll("  ");
+    try writePadded(out, headers[3], widths[3]);
+    try out.writeAll("  ");
+    try writePadded(out, headers[4], widths[4]);
+    try out.writeAll("\n");
+    if (use_color) try out.writeAll(ansi.reset);
+    if (use_color) try out.writeAll(ansi.dim);
+    try writeRepeat(out, '-', listTotalWidth(&widths, prefix_len, sep_len));
+    try out.writeAll("\n");
+    if (use_color) try out.writeAll(ansi.reset);
+}
+
+fn writeAccountsPageFooter(
+    out: *std.Io.Writer,
+    use_color: bool,
+    page_number: usize,
+    total_pages: usize,
+    start_account: usize,
+    end_account: usize,
+    total_accounts: usize,
+) !void {
+    if (use_color) try out.writeAll(ansi.dim);
+    try out.print("Page {d}/{d} ({d}-{d} of {d})\n", .{
+        page_number,
+        total_pages,
+        start_account,
+        end_account,
+        total_accounts,
+    });
+    if (use_color) try out.writeAll(ansi.reset);
 }
 
 fn printTableBorder(out: *std.Io.Writer, widths: []const usize) !void {

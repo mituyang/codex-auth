@@ -9,6 +9,16 @@ render through the shared table code in `src/cli/table_layout.zig` and are
 called by the renderers in `src/cli/render.zig`. The width-priority rules only
 matter when a viewport width is known, which is typically the live case.
 
+## Pagination
+
+Static output and numbered fallback tables split account rows into pages of at
+most 20 accounts. Each printed page repeats the table header and ends with a
+`Page X/Y` footer.
+
+Interactive and live table views cap the visible table body at 20 rows. Left and
+Right move by a page, while Up/Down and mouse wheel input scroll within the same
+bounded viewport.
+
 ## Column Width Priority
 
 The account table uses two account-width phases:

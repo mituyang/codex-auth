@@ -4,9 +4,11 @@ const registry = @import("../registry/root.zig");
 const auth = @import("../auth/auth.zig");
 const me_api = @import("../api/me.zig");
 const account_names = @import("account_names.zig");
+const usage_refresh = @import("usage.zig");
 
 const defaultAccountFetcher = account_names.defaultAccountFetcher;
 const refreshAccountNamesAfterLogin = account_names.refreshAccountNamesAfterLogin;
+const refreshForegroundUsageForDisplayWithBatchFetcherUsingApiEnabledAndActiveOnly = usage_refresh.refreshForegroundUsageForDisplayWithBatchFetcherUsingApiEnabledAndActiveOnly;
 
 pub fn handleLogin(allocator: std.mem.Allocator, codex_home: []const u8, opts: cli.types.LoginOptions) !void {
     try cli.login.runCodexLogin(opts);
@@ -51,6 +53,14 @@ pub fn handleLogin(allocator: std.mem.Allocator, codex_home: []const u8, opts: c
     const record = try registry.accountFromAuth(allocator, "", &info);
     try registry.upsertAccount(allocator, &reg, record);
     try registry.setActiveAccountKey(allocator, &reg, record_key);
+    var usage_state = try refreshForegroundUsageForDisplayWithBatchFetcherUsingApiEnabledAndActiveOnly(
+        allocator,
+        codex_home,
+        &reg,
+        true,
+        true,
+    );
+    defer usage_state.deinit(allocator);
     _ = try refreshAccountNamesAfterLogin(allocator, &reg, &info, defaultAccountFetcher);
     try registry.saveRegistry(allocator, codex_home, &reg);
 }

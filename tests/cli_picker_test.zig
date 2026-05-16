@@ -252,6 +252,59 @@ test "Scenario: Given live switch table rows when rendering then table spacing a
     );
 }
 
+test "Scenario: Given numbered switch rows when rendering then pages contain at most twenty accounts" {
+    const gpa = std.testing.allocator;
+    var reg = makeTestRegistry();
+    defer reg.deinit(gpa);
+
+    for (1..22) |idx| try appendNumberedTestAccount(gpa, &reg, idx);
+
+    var rows = try buildSwitchRows(gpa, &reg);
+    defer rows.deinit(gpa);
+
+    var output: std.Io.Writer.Allocating = .init(gpa);
+    defer output.deinit();
+    const idx_width = @max(@as(usize, 2), indexWidth(accountRowCount(rows.items)));
+    try renderSwitchList(&output.writer, &reg, rows.items, idx_width, rows.widths, null, false);
+
+    const rendered = output.written();
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, rendered, "ACCOUNT"));
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "Page 1/2 (1-20 of 21)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "Page 2/2 (21-21 of 21)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "20 account-020@example.com") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "21 account-021@example.com") != null);
+}
+
+test "Scenario: Given switch page navigation then any row on a page jumps to the next page top" {
+    const gpa = std.testing.allocator;
+    var reg = makeTestRegistry();
+    defer reg.deinit(gpa);
+
+    for (1..26) |idx| try appendNumberedTestAccount(gpa, &reg, idx);
+
+    var rows = try buildSwitchRows(gpa, &reg);
+    defer rows.deinit(gpa);
+
+    const next_page_idx = live_tui.pageSelectableIndex(rows.selectable_row_indices.len, 20, 5, .down) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 20), next_page_idx);
+    const previous_page_idx = live_tui.pageSelectableIndex(rows.selectable_row_indices.len, 20, 24, .up) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 0), previous_page_idx);
+
+    var viewport_start: usize = 0;
+    const viewport = live_tui.selectedViewport(80, rows.items, next_page_idx, live_tui.switchFixedLines("", ""), &viewport_start);
+    try std.testing.expectEqual(rows.selectable_row_indices[next_page_idx], viewport.start_row);
+    try std.testing.expectEqual(@as(usize, 20), viewport.max_rows.?);
+
+    var output: std.Io.Writer.Allocating = .init(gpa);
+    defer output.deinit();
+    const idx_width = @max(@as(usize, 2), indexWidth(accountRowCount(rows.items)));
+    try renderSwitchListViewport(&output.writer, &reg, rows.items, idx_width, rows.widths, next_page_idx, false, viewport);
+
+    const rendered = output.written();
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "> 21 account-021@example.com") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "20 account-020@example.com") == null);
+}
+
 test "Scenario: Given live remove table rows when rendering then checkbox spacing and group rows stay stable" {
     var rows = [_]SwitchRow{
         .{
@@ -299,6 +352,32 @@ test "Scenario: Given live remove table rows when rendering then checkbox spacin
             "> [x] 01   child  Team  -   -       -   \n",
         writer.buffered(),
     );
+}
+
+test "Scenario: Given numbered remove rows when rendering then pages contain at most twenty accounts" {
+    const gpa = std.testing.allocator;
+    var reg = makeTestRegistry();
+    defer reg.deinit(gpa);
+
+    for (1..22) |idx| try appendNumberedTestAccount(gpa, &reg, idx);
+
+    var rows = try buildSwitchRows(gpa, &reg);
+    defer rows.deinit(gpa);
+    const checked = try gpa.alloc(bool, rows.selectable_row_indices.len);
+    defer gpa.free(checked);
+    @memset(checked, false);
+
+    var output: std.Io.Writer.Allocating = .init(gpa);
+    defer output.deinit();
+    const idx_width = @max(@as(usize, 2), indexWidth(accountRowCount(rows.items)));
+    try renderRemoveList(&output.writer, &reg, rows.items, idx_width, rows.widths, null, checked, false);
+
+    const rendered = output.written();
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, rendered, "ACCOUNT"));
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "Page 1/2 (1-20 of 21)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "Page 2/2 (21-21 of 21)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "[ ] 20 account-020@example.com") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "[ ] 21 account-021@example.com") != null);
 }
 
 test "Scenario: Given a live switch viewport when rendering then long lists keep global numbering" {
@@ -610,16 +689,16 @@ test "Scenario: Given a long live list when scrolling down then viewport can rea
     const fixed_lines = live_tui.listFixedLines("Live refresh: local | Refresh in 9s");
     const max_rows = live_tui.maxTableRows(terminal_rows, fixed_lines);
 
-    try std.testing.expectEqual(@as(usize, 63), max_rows);
+    try std.testing.expectEqual(@as(usize, 20), max_rows);
 
     for (0..200) |_| {
         live_tui.scrollListViewport(row_count, max_rows, &viewport_start, .down);
     }
 
-    try std.testing.expectEqual(@as(usize, 42), viewport_start);
+    try std.testing.expectEqual(@as(usize, 85), viewport_start);
     const viewport = live_tui.listViewport(terminal_rows, row_count, fixed_lines, &viewport_start);
-    try std.testing.expectEqual(@as(usize, 42), viewport.start_row);
-    try std.testing.expectEqual(@as(usize, 63), viewport.max_rows.?);
+    try std.testing.expectEqual(@as(usize, 85), viewport.start_row);
+    try std.testing.expectEqual(@as(usize, 20), viewport.max_rows.?);
 }
 
 test "Scenario: Given a long live list when paging or jumping then viewport clamps to valid bounds" {
@@ -682,8 +761,8 @@ test "Scenario: Given a long selectable live list when paging then selection can
         &viewport_start,
     );
 
-    try std.testing.expectEqual(@as(usize, 43), viewport.start_row);
-    try std.testing.expectEqual(@as(usize, 62), viewport.max_rows.?);
+    try std.testing.expectEqual(@as(usize, 100), viewport.start_row);
+    try std.testing.expectEqual(@as(usize, 20), viewport.max_rows.?);
 }
 
 test "Scenario: Given unselectable rows at live switch edges when viewport scrolling then first and final accounts are reachable" {
@@ -1403,15 +1482,15 @@ test "Scenario: Given live screen status and footers with color when rendering t
 
 test "Scenario: Given Windows console labels when rendering unicode-prone output then ASCII fallbacks are used" {
     try std.testing.expectEqualStrings(
-        "Keys: Up/Down or j/k, 1-9 type, click headers sort, Enter select, Esc or q quit\n",
+        "Keys: Up/Down or j/k move, Left/Right page, 1-9 type, click headers sort, Enter select, Esc or q quit\n",
         switchTuiFooterText(true),
     );
     try std.testing.expectEqualStrings(
-        "Keys: Up/Down or j/k move, Space toggle, 1-9 type, click headers sort, Enter delete, Esc or q quit\n",
+        "Keys: Up/Down or j/k move, Left/Right page, Space toggle, 1-9 type, click headers sort, Enter delete, Esc or q quit\n",
         removeTuiFooterText(true),
     );
     try std.testing.expectEqualStrings(
-        "Keys: Up/Down scroll, PgUp/PgDn page, Home/End jump, click headers sort, Esc or q quit\n",
+        "Keys: Up/Down scroll, Left/Right page, Home/End jump, click headers sort, Esc or q quit\n",
         listTuiFooterText(true),
     );
     try std.testing.expectEqualStrings("[+]", importReportMarker(.imported, true));
@@ -1421,15 +1500,15 @@ test "Scenario: Given Windows console labels when rendering unicode-prone output
 
 test "Scenario: Given non-Windows console labels when rendering unicode-prone output then the richer glyphs remain" {
     try std.testing.expectEqualStrings(
-        "Keys: ↑/↓ or j/k, 1-9 type, click headers sort, Enter select, Esc or q quit\n",
+        "Keys: ↑/↓ or j/k move, ←/→ page, 1-9 type, click headers sort, Enter select, Esc or q quit\n",
         switchTuiFooterText(false),
     );
     try std.testing.expectEqualStrings(
-        "Keys: ↑/↓ or j/k move, Space toggle, 1-9 type, click headers sort, Enter delete, Esc or q quit\n",
+        "Keys: ↑/↓ or j/k move, ←/→ page, Space toggle, 1-9 type, click headers sort, Enter delete, Esc or q quit\n",
         removeTuiFooterText(false),
     );
     try std.testing.expectEqualStrings(
-        "Keys: ↑/↓ scroll, PgUp/PgDn page, Home/End jump, click headers sort, Esc or q quit\n",
+        "Keys: ↑/↓ scroll, ←/→ page, Home/End jump, click headers sort, Esc or q quit\n",
         listTuiFooterText(false),
     );
     try std.testing.expectEqualStrings("✓", importReportMarker(.imported, false));

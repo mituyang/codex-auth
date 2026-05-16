@@ -17,6 +17,7 @@ codex-auth list --skip-api
 - Shows selectable row numbers using the same ordering as `switch` and `remove`.
 - Groups rows by email when the same email owns multiple account snapshots.
 - Shows `ACCOUNT`, `PLAN`, `5H`, `WEEKLY`, and `LAST ACTIVITY`.
+- Static output and numbered tables are split into pages of at most 20 account rows.
 
 ## Refresh Modes
 
@@ -37,5 +38,6 @@ When local-only refresh is active, only the active account can be updated from l
 - Remote refresh failures can render row overlays such as `401`, `403`, `TimedOut`, or `MissingAuth`.
 - `LAST ACTIVITY` is based on the last stored usage update time.
 - In the interactive table, click a table header to sort by that column; click the same header again to reverse the direction.
+- Interactive table views show at most 20 rows at once and use Left/Right for page navigation.
 - When the interactive table exits, it prints the final visible table, preserving the current sort order.
 - Shared table layout policy is documented in [docs/table-layout.md](../table-layout.md).

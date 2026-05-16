@@ -28,6 +28,18 @@ test "Scenario: Given tty arrow escape suffixes when classifying them then both 
         .navigation => |direction| try std.testing.expectEqual(TuiNavigation.up, direction),
         else => return error.TestUnexpectedResult,
     }
+    switch (classifyTuiEscapeSuffix("[D")) {
+        .navigation => |direction| try std.testing.expectEqual(TuiNavigation.page_left, direction),
+        else => return error.TestUnexpectedResult,
+    }
+    switch (classifyTuiEscapeSuffix("[C")) {
+        .navigation => |direction| try std.testing.expectEqual(TuiNavigation.page_right, direction),
+        else => return error.TestUnexpectedResult,
+    }
+    switch (classifyTuiEscapeSuffix("OD")) {
+        .navigation => |direction| try std.testing.expectEqual(TuiNavigation.page_left, direction),
+        else => return error.TestUnexpectedResult,
+    }
 }
 
 test "Scenario: Given keyboard enhancement responses and keys when classifying them then enhanced arrows stay distinct from alternate scroll arrows" {
@@ -43,6 +55,9 @@ test "Scenario: Given keyboard enhancement responses and keys when classifying t
 
     const result = try readTuiEscapeAction(std.Io.File.stdin(), "[1;1:1A", 0, 0);
     try std.testing.expectEqual(TuiEscapeAction.keyboard_up, result.action);
+
+    const right = try readTuiEscapeAction(std.Io.File.stdin(), "[C", 0, 0);
+    try std.testing.expectEqual(TuiEscapeAction.page_right, right.action);
 }
 
 test "Scenario: Given tty paging and mouse wheel escape suffixes when classifying them then scrolling actions are recognized" {

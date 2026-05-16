@@ -165,16 +165,16 @@ pub fn selectAccountWithLiveUpdates(
                                 if (try live_tui.moveSelectedIndexBy(allocator, &selected_account_key, rows, borrowed.reg, .down, wheel_rows)) number_len = 0;
                                 needs_render = true;
                             },
-                            .page_up => {
-                                if (try live_tui.moveSelectedIndexBy(allocator, &selected_account_key, rows, borrowed.reg, .up, page_rows)) number_len = 0;
+                            .page_up, .page_left => {
+                                if (try live_tui.moveSelectedIndexToPage(allocator, &selected_account_key, rows, borrowed.reg, .up, page_rows)) number_len = 0;
                                 needs_render = true;
                             },
                             .home => {
                                 if (try live_tui.moveSelectedIndexToEdge(allocator, &selected_account_key, rows, borrowed.reg, .up)) number_len = 0;
                                 needs_render = true;
                             },
-                            .page_down => {
-                                if (try live_tui.moveSelectedIndexBy(allocator, &selected_account_key, rows, borrowed.reg, .down, page_rows)) number_len = 0;
+                            .page_down, .page_right => {
+                                if (try live_tui.moveSelectedIndexToPage(allocator, &selected_account_key, rows, borrowed.reg, .down, page_rows)) number_len = 0;
                                 needs_render = true;
                             },
                             .end => {
@@ -261,7 +261,6 @@ pub fn viewAccountsWithLiveUpdates(
 
     const use_color = terminal_color.fileColorEnabled(tui.output);
     var viewport_start: usize = 0;
-    var rendered_row_count: usize = current_display.reg.accounts.items.len;
     var last_viewport: render.LiveListViewport = .{};
     var sort_spec: ?row_data.SortSpec = null;
     var needs_render = true;
@@ -288,7 +287,6 @@ pub fn viewAccountsWithLiveUpdates(
         }
         if (needs_render or now_second != last_render_second) {
             const rows = try rows_cache.ensureList(allocator, current_display.borrowed(), sort_spec);
-            rendered_row_count = rows.items.len;
             const status_line = try controller.build_status_line(controller.context, allocator, current_display.borrowed());
             defer allocator.free(status_line);
             const viewport = live_tui.listViewport(
@@ -329,10 +327,9 @@ pub fn viewAccountsWithLiveUpdates(
                     const max_rows = live_tui.maxTableRows(tui.terminalRows(), live_tui.listFixedLines("status"));
                     const wheel_rows = live_tui.mouseWheelRows(max_rows);
                     const rows = try rows_cache.ensureList(allocator, current_display.borrowed(), sort_spec);
-                    rendered_row_count = rows.items.len;
 
                     key_loop: for (key_buf[0..key_count]) |key| {
-                        if (live_tui.applyListViewportKey(rendered_row_count, max_rows, &viewport_start, wheel_rows, key)) {
+                        if (live_tui.applyListRowsViewportKey(rows, max_rows, &viewport_start, wheel_rows, key)) {
                             needs_render = true;
                             continue;
                         }
@@ -386,7 +383,6 @@ pub fn viewAccountsWithSortableTable(
 
     const use_color = terminal_color.fileColorEnabled(tui.output);
     var viewport_start: usize = 0;
-    var rendered_row_count: usize = display.reg.accounts.items.len;
     var last_viewport: render.LiveListViewport = .{};
     var sort_spec: ?row_data.SortSpec = null;
     var needs_render = true;
@@ -398,7 +394,6 @@ pub fn viewAccountsWithSortableTable(
     main_loop: while (true) {
         if (needs_render) {
             const rows = try rows_cache.ensureList(allocator, display, sort_spec);
-            rendered_row_count = rows.items.len;
             const viewport = live_tui.listViewport(
                 tui.terminalRows(),
                 rows.items.len,
@@ -433,10 +428,9 @@ pub fn viewAccountsWithSortableTable(
                     const max_rows = live_tui.maxTableRows(tui.terminalRows(), live_tui.listFixedLines(""));
                     const wheel_rows = live_tui.mouseWheelRows(max_rows);
                     const rows = try rows_cache.ensureList(allocator, display, sort_spec);
-                    rendered_row_count = rows.items.len;
 
                     key_loop: for (key_buf[0..key_count]) |key| {
-                        if (live_tui.applyListViewportKey(rendered_row_count, max_rows, &viewport_start, wheel_rows, key)) {
+                        if (live_tui.applyListRowsViewportKey(rows, max_rows, &viewport_start, wheel_rows, key)) {
                             needs_render = true;
                             continue;
                         }

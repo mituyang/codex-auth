@@ -15,6 +15,7 @@ const nav = @import("picker_nav.zig");
 const buildSwitchRowsWithUsageOverrides = row_data.buildSwitchRowsWithUsageOverrides;
 const indexWidth = row_data.indexWidth;
 const renderRemoveList = render.renderRemoveList;
+const renderRemoveListViewport = render.renderRemoveListViewport;
 const TuiSession = tui_mod.TuiSession;
 const readTuiEscapeAction = tui_mod.readTuiEscapeAction;
 const tui_poll_error_mask = tui_mod.tui_poll_error_mask;
@@ -150,21 +151,35 @@ fn selectRemoveInteractive(
     const use_color = terminal_color.fileColorEnabled(tui.output);
     const idx_width = @max(@as(usize, 2), indexWidth(rows.selectable_row_indices.len));
     var sort_spec: ?row_data.SortSpec = null;
+    var viewport_start: usize = 0;
 
     while (true) {
+        const fixed_lines: usize = 4;
+        const page_rows = live_tui.maxTableRows(tui.terminalRows(), fixed_lines);
+        const viewport = live_tui.selectableViewport(tui.terminalRows(), rows.items, idx, fixed_lines, &viewport_start, true);
         try tui.resetFrame();
         writeTuiPromptLine(out, "Select accounts to delete:", number_buf[0..number_len]) catch |err| return mapTuiOutputError(err);
         out.writeAll("\n") catch |err| return mapTuiOutputError(err);
-        renderRemoveList(out, reg, rows.items, idx_width, rows.widths, idx, checked, use_color) catch |err| return mapTuiOutputError(err);
+        renderRemoveListViewport(out, reg, rows.items, idx_width, rows.widths, idx, checked, use_color, .{
+            .start_row = viewport.start_row,
+            .max_rows = viewport.max_rows,
+            .max_cols = tui.terminalCols(),
+        }) catch |err| return mapTuiOutputError(err);
         out.writeAll("\n") catch |err| return mapTuiOutputError(err);
         writeRemoveTuiFooter(out, use_color) catch |err| return mapTuiOutputError(err);
         try tui.flushOutput();
 
         if (comptime builtin.os.tag == .windows) {
             switch (try tui.readWindowsKey()) {
-                .move_up, .keyboard_up, .scroll_up, .page_up => {
+                .move_up, .keyboard_up, .scroll_up => {
                     if (idx > 0) {
                         idx -= 1;
+                        number_len = 0;
+                    }
+                },
+                .page_up, .page_left => {
+                    if (live_tui.pageSelectableIndex(rows.selectable_row_indices.len, page_rows, idx, .up)) |page_idx| {
+                        idx = page_idx;
                         number_len = 0;
                     }
                 },
@@ -172,9 +187,15 @@ fn selectRemoveInteractive(
                     idx = 0;
                     number_len = 0;
                 },
-                .move_down, .keyboard_down, .scroll_down, .page_down => {
+                .move_down, .keyboard_down, .scroll_down => {
                     if (idx + 1 < rows.selectable_row_indices.len) {
                         idx += 1;
+                        number_len = 0;
+                    }
+                },
+                .page_down, .page_right => {
+                    if (live_tui.pageSelectableIndex(rows.selectable_row_indices.len, page_rows, idx, .down)) |page_idx| {
+                        idx = page_idx;
                         number_len = 0;
                     }
                 },
@@ -255,15 +276,27 @@ fn selectRemoveInteractive(
                     tui_escape_sequence_timeout_ms,
                 );
                 switch (escape.action) {
-                    .move_up, .keyboard_up, .scroll_up, .page_up, .home => {
+                    .move_up, .keyboard_up, .scroll_up, .home => {
                         if (idx > 0) {
                             idx = if (escape.action == .home) 0 else idx - 1;
                             number_len = 0;
                         }
                     },
-                    .move_down, .keyboard_down, .scroll_down, .page_down, .end => {
+                    .page_up, .page_left => {
+                        if (live_tui.pageSelectableIndex(rows.selectable_row_indices.len, page_rows, idx, .up)) |page_idx| {
+                            idx = page_idx;
+                            number_len = 0;
+                        }
+                    },
+                    .move_down, .keyboard_down, .scroll_down, .end => {
                         if (idx + 1 < rows.selectable_row_indices.len) {
                             idx = if (escape.action == .end) rows.selectable_row_indices.len - 1 else idx + 1;
+                            number_len = 0;
+                        }
+                    },
+                    .page_down, .page_right => {
+                        if (live_tui.pageSelectableIndex(rows.selectable_row_indices.len, page_rows, idx, .down)) |page_idx| {
+                            idx = page_idx;
                             number_len = 0;
                         }
                     },

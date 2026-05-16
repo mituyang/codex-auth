@@ -16,6 +16,7 @@ codex-auth remove --all
 - The default picker performs foreground API refresh unless `codex-auth config switch --skip-api` is set.
 - `--api` attempts a best-effort foreground refresh for picker display.
 - `--skip-api` explicitly forbids remote refresh.
+- Numbered fallback output is split into pages of at most 20 account rows.
 - Click a table header to sort by that column; click the same header again to reverse the direction.
 - `q` quits without deleting accounts.
 
@@ -24,6 +25,7 @@ codex-auth remove --all
 `codex-auth remove --live` keeps the picker open after each deletion.
 
 - Removed rows disappear from the current display immediately.
+- The picker shows at most 20 rows at once and uses Left/Right for page navigation.
 - Existing row overlays stay in place until the next scheduled refresh.
 - The active account shown after deletion comes from the persisted registry state.
 - Click a table header to sort by that column; click the same header again to reverse the direction.

@@ -161,6 +161,33 @@ test "writeAccountsTable shows usage override statuses for failed refreshes" {
     try std.testing.expect(std.mem.count(u8, output, "403") >= 2);
 }
 
+test "writeAccountsTable paginates account rows after the default page size" {
+    const gpa = std.testing.allocator;
+    var reg = makeTestRegistry();
+    defer reg.deinit(gpa);
+
+    for (1..22) |idx| {
+        const record_key = try std.fmt.allocPrint(gpa, "user-{d:0>3}::acc-{d:0>3}", .{ idx, idx });
+        defer gpa.free(record_key);
+        const email = try std.fmt.allocPrint(gpa, "account-{d:0>3}@example.com", .{idx});
+        defer gpa.free(email);
+        try appendTestAccount(gpa, &reg, record_key, email, "", .team);
+    }
+    reg.active_account_key = try gpa.dupe(u8, "user-021::acc-021");
+    reg.active_account_activated_at_ms = 1;
+
+    var buffer: [32768]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try writeAccountsTable(&writer, &reg, false);
+
+    const output = writer.buffered();
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, output, "ACCOUNT"));
+    try std.testing.expect(std.mem.indexOf(u8, output, "Page 1/2 (1-20 of 21)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Page 2/2 (21-21 of 21)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "20 account-020@example.com") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "* 21 account-021@example.com") != null);
+}
+
 test "writeAccountsTable highlights usage override rows in red when color is enabled" {
     const gpa = std.testing.allocator;
     var reg = makeTestRegistry();

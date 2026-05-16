@@ -31,6 +31,7 @@ pub const time = struct {
 
 pub const tui = struct {
     pub const display = @import("tui/display.zig");
+    pub const pagination = @import("tui/pagination.zig");
     pub const table = @import("tui/table.zig");
 };
 

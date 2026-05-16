@@ -3,6 +3,7 @@ const registry = @import("../registry/root.zig");
 const row_data = @import("rows.zig");
 const style = @import("style.zig");
 const table_layout = @import("table_layout.zig");
+const pagination = @import("../tui/pagination.zig");
 const tui_mod = @import("tui.zig");
 
 pub const SwitchWidths = row_data.SwitchWidths;
@@ -172,7 +173,26 @@ pub fn renderSwitchList(
     cursor: ?usize,
     use_color: bool,
 ) !void {
-    try renderSwitchListViewport(out, reg, rows, idx_width, widths, cursor, use_color, .{});
+    const total_accounts = dataRowCount(rows);
+    if (!pagination.shouldPaginate(total_accounts, pagination.default_account_page_size)) {
+        try renderSwitchListViewport(out, reg, rows, idx_width, widths, cursor, use_color, .{});
+        return;
+    }
+
+    var page_start: usize = 0;
+    var page_number: usize = 1;
+    const total_pages = pagination.pageCount(total_accounts, pagination.default_account_page_size);
+    while (page_start < rows.len) : (page_number += 1) {
+        const page_end = accountPageEnd(rows, page_start, pagination.default_account_page_size);
+        try renderSwitchListViewport(out, reg, rows, idx_width, widths, cursor, use_color, .{
+            .start_row = page_start,
+            .max_rows = page_end - page_start,
+        });
+        const start_account = dataRowCount(rows[0..page_start]) + 1;
+        const end_account = dataRowCount(rows[0..page_end]);
+        try writeAccountPageFooter(out, use_color, page_number, total_pages, start_account, end_account, total_accounts);
+        page_start = page_end;
+    }
 }
 
 pub fn renderSwitchListViewport(
@@ -227,7 +247,26 @@ pub fn renderRemoveList(
     checked: []const bool,
     use_color: bool,
 ) !void {
-    try renderRemoveListViewport(out, reg, rows, idx_width, widths, cursor, checked, use_color, .{});
+    const total_accounts = dataRowCount(rows);
+    if (!pagination.shouldPaginate(total_accounts, pagination.default_account_page_size)) {
+        try renderRemoveListViewport(out, reg, rows, idx_width, widths, cursor, checked, use_color, .{});
+        return;
+    }
+
+    var page_start: usize = 0;
+    var page_number: usize = 1;
+    const total_pages = pagination.pageCount(total_accounts, pagination.default_account_page_size);
+    while (page_start < rows.len) : (page_number += 1) {
+        const page_end = accountPageEnd(rows, page_start, pagination.default_account_page_size);
+        try renderRemoveListViewport(out, reg, rows, idx_width, widths, cursor, checked, use_color, .{
+            .start_row = page_start,
+            .max_rows = page_end - page_start,
+        });
+        const start_account = dataRowCount(rows[0..page_start]) + 1;
+        const end_account = dataRowCount(rows[0..page_end]);
+        try writeAccountPageFooter(out, use_color, page_number, total_pages, start_account, end_account, total_accounts);
+        page_start = page_end;
+    }
 }
 
 pub fn renderRemoveListViewport(
@@ -287,20 +326,19 @@ pub fn liveViewportStartForDisplayIndex(
     max_rows: usize,
     current_start: usize,
 ) usize {
-    var start = clampLiveViewportStart(rows.len, max_rows, current_start);
-    if (max_rows == 0 or rows.len <= max_rows) return start;
+    const start = @min(current_start, rows.len);
+    if (max_rows == 0 or rows.len == 0) return start;
 
     const selected_row_idx = if (selected_display_idx) |display_idx|
         rowIndexForDisplayIndex(rows, display_idx) orelse return start
     else
         return start;
 
-    if (selected_row_idx < start) {
-        start = selected_row_idx;
-    } else if (selected_row_idx >= start + max_rows) {
-        start = selected_row_idx - max_rows + 1;
+    if (selected_display_idx) |display_idx| {
+        const page_start_display_idx = (display_idx / max_rows) * max_rows;
+        return rowIndexForDisplayIndex(rows, page_start_display_idx) orelse selected_row_idx;
     }
-    return clampLiveViewportStart(rows.len, max_rows, start);
+    return selected_row_idx;
 }
 
 const VisibleRowRange = struct {
@@ -310,7 +348,7 @@ const VisibleRowRange = struct {
 
 fn visibleRowRange(row_count: usize, viewport: LiveListViewport) VisibleRowRange {
     const max_rows = viewport.max_rows orelse row_count;
-    const start = clampLiveViewportStart(row_count, max_rows, viewport.start_row);
+    const start = @min(viewport.start_row, row_count);
     return .{
         .start = start,
         .end = if (max_rows == 0) start else @min(row_count, start + max_rows),
@@ -333,6 +371,35 @@ fn dataRowCount(rows: []const SwitchRow) usize {
         if (!row.is_header) count += 1;
     }
     return count;
+}
+
+fn accountPageEnd(rows: []const SwitchRow, start_row: usize, page_size: usize) usize {
+    var row_idx = start_row;
+    var account_count: usize = 0;
+    while (row_idx < rows.len and account_count < page_size) : (row_idx += 1) {
+        if (!rows[row_idx].is_header) account_count += 1;
+    }
+    return row_idx;
+}
+
+fn writeAccountPageFooter(
+    out: *std.Io.Writer,
+    use_color: bool,
+    page_number: usize,
+    total_pages: usize,
+    start_account: usize,
+    end_account: usize,
+    total_accounts: usize,
+) !void {
+    if (use_color) try out.writeAll(style.ansi.dim);
+    try out.print("Page {d}/{d} ({d}-{d} of {d})\n", .{
+        page_number,
+        total_pages,
+        start_account,
+        end_account,
+        total_accounts,
+    });
+    if (use_color) try out.writeAll(style.ansi.reset);
 }
 
 fn liveAccountCells(row: SwitchRow) [table_layout.column_count]table_layout.Cell {

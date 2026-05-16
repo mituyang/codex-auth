@@ -220,13 +220,13 @@ pub fn runSwitchLiveActions(
                                 follow_selection = false;
                                 needs_render = true;
                             },
-                            .page_up => {
-                                if (try live_tui.moveSelectedIndexBy(allocator, &selected_account_key, rows, borrowed.reg, .up, page_rows)) number_len = 0;
+                            .page_up, .page_left => {
+                                if (try live_tui.moveSelectedIndexToPage(allocator, &selected_account_key, rows, borrowed.reg, .up, page_rows)) number_len = 0;
                                 follow_selection = true;
                                 needs_render = true;
                             },
-                            .page_down => {
-                                if (try live_tui.moveSelectedIndexBy(allocator, &selected_account_key, rows, borrowed.reg, .down, page_rows)) number_len = 0;
+                            .page_down, .page_right => {
+                                if (try live_tui.moveSelectedIndexToPage(allocator, &selected_account_key, rows, borrowed.reg, .down, page_rows)) number_len = 0;
                                 follow_selection = true;
                                 needs_render = true;
                             },

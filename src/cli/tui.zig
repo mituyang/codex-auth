@@ -38,7 +38,9 @@ const win = struct {
     pub const VK_NEXT: WORD = 0x22;
     pub const VK_END: WORD = 0x23;
     pub const VK_HOME: WORD = 0x24;
+    pub const VK_LEFT: WORD = 0x25;
     pub const VK_UP: WORD = 0x26;
+    pub const VK_RIGHT: WORD = 0x27;
     pub const VK_DOWN: WORD = 0x28;
 
     pub const WAIT_OBJECT_0: DWORD = 0x00000000;
@@ -108,6 +110,8 @@ pub const TuiNavigation = enum {
     keyboard_down,
     page_up,
     page_down,
+    page_left,
+    page_right,
     home,
     end,
     scroll_up,
@@ -136,6 +140,8 @@ pub const TuiEscapeAction = enum {
     keyboard_down,
     page_up,
     page_down,
+    page_left,
+    page_right,
     home,
     end,
     scroll_up,
@@ -169,6 +175,8 @@ pub const TuiInputKey = union(enum) {
     keyboard_down,
     page_up,
     page_down,
+    page_left,
+    page_right,
     home,
     end,
     scroll_up,
@@ -282,9 +290,9 @@ pub fn writeTuiFrameTo(out: *std.Io.Writer, frame: []const u8, previous_line_cou
 
 pub fn switchTuiFooterText(is_windows: bool) []const u8 {
     return if (is_windows)
-        "Keys: Up/Down or j/k, 1-9 type, click headers sort, Enter select, Esc or q quit\n"
+        "Keys: Up/Down or j/k move, Left/Right page, 1-9 type, click headers sort, Enter select, Esc or q quit\n"
     else
-        "Keys: ↑/↓ or j/k, 1-9 type, click headers sort, Enter select, Esc or q quit\n";
+        "Keys: ↑/↓ or j/k move, ←/→ page, 1-9 type, click headers sort, Enter select, Esc or q quit\n";
 }
 
 pub fn writeSwitchTuiFooter(out: *std.Io.Writer, use_color: bool) !void {
@@ -297,9 +305,9 @@ pub fn writeSwitchTuiFooterBounded(out: *std.Io.Writer, use_color: bool, max_col
 
 pub fn removeTuiFooterText(is_windows: bool) []const u8 {
     return if (is_windows)
-        "Keys: Up/Down or j/k move, Space toggle, 1-9 type, click headers sort, Enter delete, Esc or q quit\n"
+        "Keys: Up/Down or j/k move, Left/Right page, Space toggle, 1-9 type, click headers sort, Enter delete, Esc or q quit\n"
     else
-        "Keys: ↑/↓ or j/k move, Space toggle, 1-9 type, click headers sort, Enter delete, Esc or q quit\n";
+        "Keys: ↑/↓ or j/k move, ←/→ page, Space toggle, 1-9 type, click headers sort, Enter delete, Esc or q quit\n";
 }
 
 pub fn writeRemoveTuiFooter(out: *std.Io.Writer, use_color: bool) !void {
@@ -312,9 +320,9 @@ pub fn writeRemoveTuiFooterBounded(out: *std.Io.Writer, use_color: bool, max_col
 
 pub fn listTuiFooterText(is_windows: bool) []const u8 {
     return if (is_windows)
-        "Keys: Up/Down scroll, PgUp/PgDn page, Home/End jump, click headers sort, Esc or q quit\n"
+        "Keys: Up/Down scroll, Left/Right page, Home/End jump, click headers sort, Esc or q quit\n"
     else
-        "Keys: ↑/↓ scroll, PgUp/PgDn page, Home/End jump, click headers sort, Esc or q quit\n";
+        "Keys: ↑/↓ scroll, ←/→ page, Home/End jump, click headers sort, Esc or q quit\n";
 }
 
 pub fn writeListTuiFooter(out: *std.Io.Writer, use_color: bool) !void {
@@ -499,6 +507,8 @@ pub const TuiSession = struct {
                     .keyboard_down => appendTuiInputKey(keys, &key_count, .keyboard_down),
                     .page_up => appendTuiInputKey(keys, &key_count, .page_up),
                     .page_down => appendTuiInputKey(keys, &key_count, .page_down),
+                    .page_left => appendTuiInputKey(keys, &key_count, .page_left),
+                    .page_right => appendTuiInputKey(keys, &key_count, .page_right),
                     .home => appendTuiInputKey(keys, &key_count, .home),
                     .end => appendTuiInputKey(keys, &key_count, .end),
                     .scroll_up => appendTuiInputKey(keys, &key_count, .scroll_up),
@@ -567,6 +577,8 @@ pub const TuiSession = struct {
                 win.VK_DOWN => TuiInputKey.move_down,
                 win.VK_PRIOR => TuiInputKey.page_up,
                 win.VK_NEXT => TuiInputKey.page_down,
+                win.VK_LEFT => TuiInputKey.page_left,
+                win.VK_RIGHT => TuiInputKey.page_right,
                 win.VK_HOME => TuiInputKey.home,
                 win.VK_END => TuiInputKey.end,
                 win.VK_RETURN => TuiInputKey.enter,
@@ -715,14 +727,20 @@ pub fn classifyTuiEscapeSuffix(seq: []const u8) TuiEscapeClassification {
                     else => .ignore,
                 };
             }
-            if (final == 'A' or final == 'B') {
+            if (final == 'A' or final == 'B' or final == 'C' or final == 'D') {
                 if (isEnhancedArrowSuffix(seq)) {
                     break :blk .{ .navigation = if (final == 'A') .keyboard_up else .keyboard_down };
                 }
                 for (seq[1 .. seq.len - 1]) |ch| {
                     if (!std.ascii.isDigit(ch) and ch != ';') break :blk .ignore;
                 }
-                break :blk .{ .navigation = if (final == 'A') .up else .down };
+                break :blk .{ .navigation = switch (final) {
+                    'A' => .up,
+                    'B' => .down,
+                    'C' => .page_right,
+                    'D' => .page_left,
+                    else => unreachable,
+                } };
             }
             if (final == 'H' or final == 'F') {
                 for (seq[1 .. seq.len - 1]) |ch| {
@@ -749,8 +767,14 @@ pub fn classifyTuiEscapeSuffix(seq: []const u8) TuiEscapeClassification {
         'O' => blk: {
             if (seq.len == 1) break :blk .incomplete;
             const code = seq[1];
-            if (code == 'A' or code == 'B') {
-                break :blk .{ .navigation = if (code == 'A') .up else .down };
+            if (code == 'A' or code == 'B' or code == 'C' or code == 'D') {
+                break :blk .{ .navigation = switch (code) {
+                    'A' => .up,
+                    'B' => .down,
+                    'C' => .page_right,
+                    'D' => .page_left,
+                    else => unreachable,
+                } };
             }
             if (code == 'H' or code == 'F') {
                 break :blk .{ .navigation = if (code == 'H') .home else .end };
@@ -812,6 +836,8 @@ pub fn readTuiEscapeAction(
                         .keyboard_down => .keyboard_down,
                         .page_up => .page_up,
                         .page_down => .page_down,
+                        .page_left => .page_left,
+                        .page_right => .page_right,
                         .home => .home,
                         .end => .end,
                         .scroll_up => .scroll_up,

@@ -9,8 +9,10 @@ const NodeOutcome = http.NodeOutcome;
 const default_max_output_bytes = http.default_max_output_bytes;
 const node_use_env_proxy_env = http.node_use_env_proxy_env;
 const child_process_timeout_ms_value = http.child_process_timeout_ms_value;
+const usage_request_timeout_ms_value = http.usage_request_timeout_ms_value;
 const parseNodeHttpOutput = http.parseNodeHttpOutput;
 const parseBatchNodeHttpOutput = http.parseBatchNodeHttpOutput;
+const computeBatchChildTimeoutMsWithRequestTimeoutMs = http.computeBatchChildTimeoutMsWithRequestTimeoutMs;
 const computeBatchChildOutputLimitBytes = http.computeBatchChildOutputLimitBytes;
 const runChildCapture = http.runChildCapture;
 const runChildCaptureWithOutputLimit = http.runChildCaptureWithOutputLimit;
@@ -63,6 +65,12 @@ test "batch child output limit scales with request count" {
     try std.testing.expectEqual(default_max_output_bytes, computeBatchChildOutputLimitBytes(1));
     try std.testing.expectEqual(default_max_output_bytes * 2, computeBatchChildOutputLimitBytes(2));
     try std.testing.expectEqual(default_max_output_bytes * 8, computeBatchChildOutputLimitBytes(8));
+}
+
+test "usage request timeout is twenty seconds and batch child timeout scales by waves" {
+    try std.testing.expectEqual(@as(u64, 20_000), usage_request_timeout_ms_value);
+    try std.testing.expectEqual(@as(u64, 22_000), computeBatchChildTimeoutMsWithRequestTimeoutMs(5, 5, usage_request_timeout_ms_value));
+    try std.testing.expectEqual(@as(u64, 42_000), computeBatchChildTimeoutMsWithRequestTimeoutMs(6, 5, usage_request_timeout_ms_value));
 }
 
 test "run child capture times out stalled child process" {

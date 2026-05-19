@@ -26,6 +26,7 @@ const refresh_bg_workflow = @import("refresh_bg.zig");
 const workflow_env = @import("env.zig");
 const targets = @import("targets.zig");
 const usage_refresh = @import("usage.zig");
+pub const audit_log = @import("audit_log.zig");
 
 pub const refresh_bg = refresh_bg_workflow;
 pub const nowMilliseconds = workflow_env.nowMilliseconds;
@@ -94,15 +95,19 @@ pub const removeLiveRuntimeApplySelection = live_flow.removeLiveRuntimeApplySele
 pub fn main(init: std.process.Init.Minimal) !void {
     var exit_code: u8 = 0;
     runMain(init) catch |err| {
-        if (err == error.InvalidCliUsage) {
-            exit_code = 2;
-        } else if (isHandledCliError(err)) {
-            exit_code = 1;
+        if (exitCodeForError(err)) |code| {
+            exit_code = code;
         } else {
             return err;
         }
     };
     if (exit_code != 0) std.process.exit(exit_code);
+}
+
+fn exitCodeForError(err: anyerror) ?u8 {
+    if (err == error.InvalidCliUsage) return 2;
+    if (isHandledCliError(err)) return 1;
+    return null;
 }
 
 fn runMain(init: std.process.Init.Minimal) !void {
@@ -113,6 +118,9 @@ fn runMain(init: std.process.Init.Minimal) !void {
     var arena_state = std.heap.ArenaAllocator.init(allocator);
     defer arena_state.deinit();
     const args = try init.args.toSlice(arena_state.allocator());
+
+    var audit = audit_log.beginCommandBestEffort(allocator, args);
+    errdefer |err| audit_log.finishCommandBestEffort(allocator, &audit, args, exitCodeForError(err), @errorName(err));
 
     var parsed = try cli.commands.parseArgs(allocator, args);
     defer cli.commands.freeParseResult(allocator, &parsed);
@@ -149,6 +157,8 @@ fn runMain(init: std.process.Init.Minimal) !void {
         .refresh_bg => |opts| try refresh_bg_workflow.handleRefreshBg(allocator, codex_home.?, opts),
         .clean => |opts| try clean_workflow.handleClean(allocator, codex_home.?, opts),
     }
+
+    audit_log.finishCommandBestEffort(allocator, &audit, args, 0, null);
 }
 
 fn freeOwnedStrings(allocator: std.mem.Allocator, items: []const []const u8) void {

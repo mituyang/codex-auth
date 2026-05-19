@@ -5,6 +5,7 @@ const cli = @import("../cli/root.zig");
 const io_util = @import("../core/io_util.zig");
 const registry = @import("../registry/root.zig");
 const usage_api = @import("../api/usage.zig");
+const audit_log = @import("audit_log.zig");
 
 const config_file_name = "refresh-bg.json";
 const lock_file_name = "refresh-bg.lock";
@@ -214,7 +215,22 @@ fn runRefreshBackground(allocator: std.mem.Allocator, codex_home: []const u8) !v
     while (true) {
         const cfg = try loadRefreshBackgroundConfig(allocator, codex_home);
         if (!cfg.enabled) return;
-        _ = refreshOneBackgroundAccount(allocator, codex_home, usage_api.fetchUsageForAuthPathDetailed) catch {};
+        const attempt = refreshOneBackgroundAccount(allocator, codex_home, usage_api.fetchUsageForAuthPathDetailed) catch |err| blk: {
+            audit_log.appendBackgroundRefreshAttemptBestEffort(allocator, codex_home, .{
+                .failed = true,
+                .error_name = @errorName(err),
+            });
+            break :blk null;
+        };
+        if (attempt) |result| {
+            audit_log.appendBackgroundRefreshAttemptBestEffort(allocator, codex_home, .{
+                .account_index = result.account_index,
+                .attempted = result.attempted,
+                .updated = result.updated,
+                .failed = result.failed,
+                .attempts = result.attempts,
+            });
+        }
         if (!(try sleepRefreshIntervalOrDisabled(allocator, codex_home, selectBackgroundRefreshIntervalSeconds(cfg, randomSeed())))) return;
     }
 }

@@ -145,11 +145,12 @@ pub fn fetchUsageForAuthPathsDetailedBatch(
 
     if (requests.items.len == 0) return results;
 
-    var http_results = try chatgpt_http.runGetJsonBatchCommand(
+    var http_results = try chatgpt_http.runGetJsonBatchCommandWithTimeoutMs(
         allocator,
         default_usage_endpoint,
         requests.items,
         max_concurrency,
+        chatgpt_http.usage_request_timeout_ms_value,
     );
     defer http_results.deinit(allocator);
 
@@ -376,7 +377,13 @@ fn runUsageCommand(
     access_token: []const u8,
     account_id: []const u8,
 ) !UsageHttpResult {
-    const result = try chatgpt_http.runGetJsonCommand(allocator, endpoint, access_token, account_id);
+    const result = try chatgpt_http.runGetJsonCommandWithTimeoutMs(
+        allocator,
+        endpoint,
+        access_token,
+        account_id,
+        chatgpt_http.usage_request_timeout_ms_value,
+    );
     return .{
         .body = result.body,
         .status_code = result.status_code,

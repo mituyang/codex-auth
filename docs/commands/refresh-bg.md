@@ -17,6 +17,8 @@ Background refresh uses the same API-backed usage refresh path as foreground com
 
 If a background account refresh fails to return usage data, it waits 10 seconds and retries the same account up to three times before moving on to the next interval.
 
+Each background refresh round writes an audit entry to `~/.codex/logs/codex-auth.jsonl`.
+
 Configure the interval with:
 
 ```shell

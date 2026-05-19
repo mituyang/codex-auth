@@ -748,6 +748,34 @@ fn appendCustomAccount(
     });
 }
 
+test "Scenario: Given any command when running then command audit log is written by default" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{"--version"});
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectSuccess(result);
+
+    const log_path = try fs.path.join(gpa, &[_][]const u8{ home_root, ".codex", "logs", "codex-auth.jsonl" });
+    defer gpa.free(log_path);
+    const log_data = try fixtures.readFileAlloc(gpa, log_path);
+    defer gpa.free(log_data);
+
+    try std.testing.expect(std.mem.indexOf(u8, log_data, "\"kind\":\"command\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, log_data, "\"event\":\"start\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, log_data, "\"event\":\"finish\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, log_data, "\"command\":\"version\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, log_data, "\"exit_code\":0") != null);
+}
+
 test "Scenario: Given device auth login when running login then it forwards the flag and imports the current account" {
     const gpa = std.testing.allocator;
     const project_root = try projectRootAlloc(gpa);

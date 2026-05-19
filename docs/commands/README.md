@@ -24,3 +24,4 @@ This directory documents command behavior by command. Use `codex-auth <command> 
 - `--skip-api` forbids remote refresh for the current command.
 - Local-only usage refresh can update the active account from local Codex rollout files when usable local data exists.
 - Background usage refresh is controlled by `refresh-bg enable` and `refresh-bg disable`.
+- Command audit logs are written by default to `~/.codex/logs/codex-auth.jsonl`; see [docs/audit-log.md](../audit-log.md).

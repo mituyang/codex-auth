@@ -114,9 +114,17 @@ pub fn runChildCaptureWithInputAndOutputLimit(
 }
 
 pub fn computeBatchChildTimeoutMs(request_count: usize, max_concurrency: usize) u64 {
+    return computeBatchChildTimeoutMsWithRequestTimeoutMs(request_count, max_concurrency, request_timeout_ms_value);
+}
+
+pub fn computeBatchChildTimeoutMsWithRequestTimeoutMs(
+    request_count: usize,
+    max_concurrency: usize,
+    request_timeout_ms: u64,
+) u64 {
     const safe_concurrency = @max(@as(usize, 1), max_concurrency);
     const waves = @max(@as(usize, 1), (request_count + safe_concurrency - 1) / safe_concurrency);
-    return @as(u64, @intCast(waves)) * request_timeout_ms_value + 2000;
+    return @as(u64, @intCast(waves)) * request_timeout_ms + 2000;
 }
 
 pub fn computeBatchChildOutputLimitBytes(request_count: usize) usize {

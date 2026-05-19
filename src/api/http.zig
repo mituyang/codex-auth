@@ -11,6 +11,7 @@ pub const request_timeout_ms = types.request_timeout_ms;
 pub const request_timeout_ms_value = types.request_timeout_ms_value;
 pub const child_process_timeout_ms = types.child_process_timeout_ms;
 pub const child_process_timeout_ms_value = types.child_process_timeout_ms_value;
+pub const usage_request_timeout_ms_value = types.usage_request_timeout_ms_value;
 pub const browser_user_agent = types.browser_user_agent;
 pub const node_executable_env = types.node_executable_env;
 pub const node_use_env_proxy_env = types.node_use_env_proxy_env;
@@ -27,8 +28,10 @@ pub const ParsedNodeHttpOutput = types.ParsedNodeHttpOutput;
 pub const ChildCaptureResult = types.ChildCaptureResult;
 
 pub const runGetJsonCommand = node.runGetJsonCommand;
+pub const runGetJsonCommandWithTimeoutMs = node.runGetJsonCommandWithTimeoutMs;
 pub const runBearerGetJsonCommand = node.runBearerGetJsonCommand;
 pub const runGetJsonBatchCommand = node.runGetJsonBatchCommand;
+pub const runGetJsonBatchCommandWithTimeoutMs = node.runGetJsonBatchCommandWithTimeoutMs;
 pub const ensureNodeExecutableAvailable = node.ensureNodeExecutableAvailable;
 pub const resolveNodeExecutableAlloc = node.resolveNodeExecutableAlloc;
 pub const resolveNodeExecutableForDebugAlloc = node.resolveNodeExecutableForDebugAlloc;
@@ -37,6 +40,7 @@ pub const runChildCapture = child.runChildCapture;
 pub const runChildCaptureWithOutputLimit = child.runChildCaptureWithOutputLimit;
 pub const runChildCaptureWithInputAndOutputLimit = child.runChildCaptureWithInputAndOutputLimit;
 pub const computeBatchChildTimeoutMs = child.computeBatchChildTimeoutMs;
+pub const computeBatchChildTimeoutMsWithRequestTimeoutMs = child.computeBatchChildTimeoutMsWithRequestTimeoutMs;
 pub const computeBatchChildOutputLimitBytes = child.computeBatchChildOutputLimitBytes;
 
 pub const maybeEnableNodeEnvProxy = proxy.maybeEnableNodeEnvProxy;

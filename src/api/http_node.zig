@@ -20,7 +20,7 @@ const resolveNodeExecutableForLaunchAlloc = executable.resolveNodeExecutableForL
 const logNodeRequirement = executable.logNodeRequirement;
 const runChildCapture = child.runChildCapture;
 const runChildCaptureWithInputAndOutputLimit = child.runChildCaptureWithInputAndOutputLimit;
-const computeBatchChildTimeoutMs = child.computeBatchChildTimeoutMs;
+const computeBatchChildTimeoutMsWithRequestTimeoutMs = child.computeBatchChildTimeoutMsWithRequestTimeoutMs;
 const computeBatchChildOutputLimitBytes = child.computeBatchChildOutputLimitBytes;
 const parseNodeHttpOutput = parse.parseNodeHttpOutput;
 const parseBatchNodeHttpOutput = parse.parseBatchNodeHttpOutput;
@@ -212,6 +212,16 @@ pub fn runGetJsonCommand(
     return runNodeGetJsonCommand(allocator, endpoint, access_token, account_id);
 }
 
+pub fn runGetJsonCommandWithTimeoutMs(
+    allocator: std.mem.Allocator,
+    endpoint: []const u8,
+    access_token: []const u8,
+    account_id: []const u8,
+    timeout_ms: u64,
+) !HttpResult {
+    return runNodeGetJsonCommandWithTimeoutMs(allocator, endpoint, access_token, account_id, timeout_ms);
+}
+
 pub fn runBearerGetJsonCommand(
     allocator: std.mem.Allocator,
     endpoint: []const u8,
@@ -227,6 +237,16 @@ pub fn runGetJsonBatchCommand(
     max_concurrency: usize,
 ) !BatchHttpResult {
     return runNodeGetJsonBatchCommand(allocator, endpoint, requests, max_concurrency);
+}
+
+pub fn runGetJsonBatchCommandWithTimeoutMs(
+    allocator: std.mem.Allocator,
+    endpoint: []const u8,
+    requests: []const BatchRequest,
+    max_concurrency: usize,
+    timeout_ms: u64,
+) !BatchHttpResult {
+    return runNodeGetJsonBatchCommandWithTimeoutMs(allocator, endpoint, requests, max_concurrency, timeout_ms);
 }
 
 pub fn ensureNodeExecutableAvailable(allocator: std.mem.Allocator) !void {
@@ -313,8 +333,21 @@ fn runNodeGetJsonCommand(
     access_token: []const u8,
     account_id: []const u8,
 ) !HttpResult {
+    return runNodeGetJsonCommandWithTimeoutMs(allocator, endpoint, access_token, account_id, request_timeout_ms_value);
+}
+
+fn runNodeGetJsonCommandWithTimeoutMs(
+    allocator: std.mem.Allocator,
+    endpoint: []const u8,
+    access_token: []const u8,
+    account_id: []const u8,
+    timeout_ms: u64,
+) !HttpResult {
     const node_executable = try resolveNodeExecutableForLaunchAlloc(allocator);
     defer allocator.free(node_executable);
+
+    const timeout_arg = try std.fmt.allocPrint(allocator, "{d}", .{timeout_ms});
+    defer allocator.free(timeout_arg);
 
     var env_map = try getEnvMap(allocator);
     defer env_map.deinit();
@@ -333,9 +366,9 @@ fn runNodeGetJsonCommand(
         endpoint,
         access_token,
         account_id,
-        request_timeout_ms,
+        timeout_arg,
         browser_user_agent,
-    }, child_process_timeout_ms_value, &env_map) catch |err| switch (err) {
+    }, childProcessTimeoutMsForRequestTimeoutMs(timeout_ms), &env_map) catch |err| switch (err) {
         error.OutOfMemory => return err,
         error.FileNotFound => {
             logNodeRequirement();
@@ -381,6 +414,16 @@ fn runNodeGetJsonBatchCommand(
     requests: []const BatchRequest,
     max_concurrency: usize,
 ) !BatchHttpResult {
+    return runNodeGetJsonBatchCommandWithTimeoutMs(allocator, endpoint, requests, max_concurrency, request_timeout_ms_value);
+}
+
+fn runNodeGetJsonBatchCommandWithTimeoutMs(
+    allocator: std.mem.Allocator,
+    endpoint: []const u8,
+    requests: []const BatchRequest,
+    max_concurrency: usize,
+    timeout_ms: u64,
+) !BatchHttpResult {
     if (requests.len == 0) {
         return .{ .items = try allocator.alloc(BatchItemResult, 0) };
     }
@@ -409,7 +452,7 @@ fn runNodeGetJsonBatchCommand(
     defer payload_writer.deinit();
     try std.json.Stringify.value(Payload{
         .endpoint = endpoint,
-        .timeout_ms = request_timeout_ms_value,
+        .timeout_ms = timeout_ms,
         .concurrency = @max(@as(usize, 1), max_concurrency),
         .user_agent = browser_user_agent,
         .requests = requests,
@@ -423,7 +466,7 @@ fn runNodeGetJsonBatchCommand(
             node_batch_request_script,
         },
         payload_writer.written(),
-        computeBatchChildTimeoutMs(requests.len, @max(@as(usize, 1), max_concurrency)),
+        computeBatchChildTimeoutMsWithRequestTimeoutMs(requests.len, @max(@as(usize, 1), max_concurrency), timeout_ms),
         &env_map,
         computeBatchChildOutputLimitBytes(requests.len),
     ) catch |err| switch (err) {
@@ -455,4 +498,8 @@ fn runNodeGetJsonBatchCommand(
             return error.NodeJsRequired;
         },
     }
+}
+
+fn childProcessTimeoutMsForRequestTimeoutMs(timeout_ms: u64) u64 {
+    return timeout_ms + 2000;
 }

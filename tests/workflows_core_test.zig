@@ -752,6 +752,51 @@ test "Scenario: Given foreground usage returns response error code then status o
     try std.testing.expectEqualStrings("401 token_invalidated", state.usage_overrides[0].?);
 }
 
+test "Scenario: Given foreground usage returns token expired then status override hides the code" {
+    const gpa = std.testing.allocator;
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const codex_home = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(codex_home);
+
+    const TestUsageFetcher = struct {
+        fn fetch(_: std.mem.Allocator, _: []const u8) !usage_api.UsageFetchResult {
+            return .{
+                .snapshot = null,
+                .status_code = 401,
+                .error_code = usage_api.parseNonSuccessErrorCode(std.testing.allocator, 401,
+                    \\{
+                    \\  "error": {
+                    \\    "message": "Provided authentication token is expired. Please try signing in again.",
+                    \\    "type": "invalid_request_error",
+                    \\    "param": null,
+                    \\    "code": "token_expired"
+                    \\  }
+                    \\}
+                ),
+            };
+        }
+    };
+
+    var reg = makeRegistry();
+    defer reg.deinit(gpa);
+    try appendAccount(gpa, &reg, primary_record_key, "user@example.com", "", .team);
+    try writeAccountSnapshotWithIds(gpa, codex_home, "user@example.com", "team", shared_user_id, primary_account_id);
+
+    var state = try main_mod.refreshForegroundUsageForDisplayWithApiFetcherWithPoolInit(
+        gpa,
+        codex_home,
+        &reg,
+        TestUsageFetcher.fetch,
+        main_mod.initForegroundUsagePool,
+    );
+    defer state.deinit(gpa);
+
+    try std.testing.expectEqual(@as(usize, 1), state.failed);
+    try std.testing.expectEqualStrings("401", state.usage_overrides[0].?);
+}
+
 test "Scenario: Given long response error code then status override is truncated to quota display width" {
     const gpa = std.testing.allocator;
     const code = usage_api.parseNonSuccessErrorCode(std.testing.allocator, 429,

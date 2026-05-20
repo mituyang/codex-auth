@@ -47,6 +47,7 @@ pub fn parseAccountRecord(allocator: std.mem.Allocator, obj: std.json.ObjectMap)
         .last_used_at = readInt(obj.get("last_used_at")),
         .last_usage = null,
         .last_usage_at = readInt(obj.get("last_usage_at")),
+        .last_usage_error = try parseOptionalStoredStringAlloc(allocator, obj.get("last_usage_error")),
         .last_local_rollout = null,
     };
     errdefer freeAccountRecord(allocator, &rec);

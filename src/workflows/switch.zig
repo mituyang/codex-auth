@@ -5,6 +5,7 @@ const foreground_api_config = @import("foreground_api_config.zig");
 const live_flow = @import("live.zig");
 const preflight = @import("preflight.zig");
 const query_mod = @import("query.zig");
+const switch_refresh = @import("switch_refresh.zig");
 
 const ensureLiveTty = preflight.ensureLiveTty;
 const resolveSwitchQueryLocally = query_mod.resolveSwitchQueryLocally;
@@ -50,6 +51,11 @@ pub fn handleSwitch(allocator: std.mem.Allocator, codex_home: []const u8, opts: 
             },
         };
         if (selected_account_key == null) return;
+        try switch_refresh.refreshPreviousActiveUsageBeforeSwitch(
+            allocator,
+            codex_home,
+            &reg,
+        );
         try registry.activateAccountByKey(allocator, codex_home, &reg, selected_account_key.?);
         try registry.saveRegistry(allocator, codex_home, &reg);
         try cli.output.printSwitchedAccount(allocator, &reg, selected_account_key.?);
@@ -58,7 +64,8 @@ pub fn handleSwitch(allocator: std.mem.Allocator, codex_home: []const u8, opts: 
 
     const effective_api_mode = try foreground_api_config.resolveForegroundApiMode(allocator, codex_home, opts.api_mode);
     if (!opts.live) {
-        var loaded = if (effective_api_mode == .skip_api)
+        const refresh_before_picker = opts.api_mode == .force_api;
+        var loaded = if (!refresh_before_picker or effective_api_mode == .skip_api)
             try loadStoredSwitchSelectionDisplay(
                 allocator,
                 codex_home,
@@ -88,6 +95,11 @@ pub fn handleSwitch(allocator: std.mem.Allocator, codex_home: []const u8, opts: 
             return err;
         };
         if (selected_account_key == null) return;
+        try switch_refresh.refreshPreviousActiveUsageBeforeSwitch(
+            allocator,
+            codex_home,
+            &loaded.display.reg,
+        );
         try registry.activateAccountByKey(allocator, codex_home, &loaded.display.reg, selected_account_key.?);
         try registry.saveRegistry(allocator, codex_home, &loaded.display.reg);
         try cli.output.printSwitchedAccount(allocator, &loaded.display.reg, selected_account_key.?);

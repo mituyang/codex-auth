@@ -982,6 +982,27 @@ test "Scenario: Given usage overrides when rendering switch list then failed row
     try std.testing.expect(std.mem.count(u8, output, "401") >= 2);
 }
 
+test "Scenario: Given stored usage error when rendering switch list then failed rows show response status in both usage columns" {
+    const gpa = std.testing.allocator;
+    var reg = makeTestRegistry();
+    defer reg.deinit(gpa);
+
+    try appendTestAccount(gpa, &reg, "user-1::acc-1", "user@example.com", "", .team);
+    try appendTestAccount(gpa, &reg, "user-1::acc-2", "user@example.com", "", .free);
+    reg.accounts.items[1].last_usage_error = try gpa.dupe(u8, "401");
+
+    var rows = try buildSwitchRows(gpa, &reg);
+    defer rows.deinit(gpa);
+
+    var buffer: [2048]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    const idx_width = @max(@as(usize, 2), indexWidth(rows.selectable_row_indices.len));
+    try renderSwitchList(&writer, &reg, rows.items, idx_width, rows.widths, null, false);
+
+    const output = writer.buffered();
+    try std.testing.expect(std.mem.count(u8, output, "401") >= 2);
+}
+
 test "Scenario: Given usage overrides when selecting switch accounts then errored rows are skipped" {
     const gpa = std.testing.allocator;
     var reg = makeTestRegistry();

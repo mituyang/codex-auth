@@ -119,6 +119,7 @@ pub const exportAccounts = export_mod.exportAccounts;
 pub const findAccountIndexByAccountKey = account_ops.findAccountIndexByAccountKey;
 pub const setActiveAccountKey = account_ops.setActiveAccountKey;
 pub const updateUsage = account_ops.updateUsage;
+pub const setAccountLastUsageError = account_ops.setAccountLastUsageError;
 pub fn syncActiveAccountFromAuth(allocator: std.mem.Allocator, codex_home: []const u8, reg: *Registry) !bool {
     return account_ops.syncActiveAccountFromAuthWithImporter(allocator, codex_home, reg, autoImportActiveAuth);
 }

@@ -21,7 +21,7 @@ This directory documents command behavior by command. Use `codex-auth <command> 
 - Commands resolve `codex_home` from `CODEX_HOME`, then `HOME/.codex`, then `USERPROFILE/.codex` on Windows.
 - Account selection commands use the same row ordering and display grouping.
 - `--api` explicitly selects the default remote usage and account-name refresh path for the current command.
-- `--skip-api` forbids remote refresh for the current command.
+- `--skip-api` uses local data for command rendering; successful `switch` operations still refresh the previously active account once.
 - Local-only usage refresh can update the active account from local Codex rollout files when usable local data exists.
 - Background usage refresh is controlled by `refresh-bg enable` and `refresh-bg disable`.
 - Command audit logs are written by default to `~/.codex/logs/codex-auth.jsonl`; see [docs/audit-log.md](../audit-log.md).

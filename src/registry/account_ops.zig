@@ -78,9 +78,26 @@ pub fn updateUsage(allocator: std.mem.Allocator, reg: *Registry, account_key: []
             }
             rec.last_usage = snapshot;
             rec.last_usage_at = now;
+            if (rec.last_usage_error) |last_usage_error| {
+                allocator.free(last_usage_error);
+                rec.last_usage_error = null;
+            }
             break;
         }
     }
+}
+
+pub fn setAccountLastUsageError(allocator: std.mem.Allocator, reg: *Registry, account_key: []const u8, usage_error: []const u8) !bool {
+    const now = std.Io.Timestamp.now(app_runtime.io(), .real).toSeconds();
+    for (reg.accounts.items) |*rec| {
+        if (std.mem.eql(u8, rec.account_key, account_key)) {
+            const error_changed = try replaceOptionalStringAlloc(allocator, &rec.last_usage_error, usage_error);
+            const usage_at_changed = rec.last_usage_at == null or rec.last_usage_at.? != now;
+            rec.last_usage_at = now;
+            return error_changed or usage_at_changed;
+        }
+    }
+    return false;
 }
 
 pub fn syncActiveAccountFromAuthWithImporter(allocator: std.mem.Allocator, codex_home: []const u8, reg: *Registry, auto_importer: anytype) !bool {
@@ -537,6 +554,7 @@ pub fn accountFromAuth(
         .last_used_at = null,
         .last_usage = null,
         .last_usage_at = null,
+        .last_usage_error = null,
         .last_local_rollout = null,
     };
 }
@@ -574,6 +592,7 @@ pub fn accountFromApiKeyMe(
         .last_used_at = null,
         .last_usage = null,
         .last_usage_at = null,
+        .last_usage_error = null,
         .last_local_rollout = null,
     };
 }
@@ -595,6 +614,16 @@ pub fn mergeAccountRecord(allocator: std.mem.Allocator, dest: *AccountRecord, in
         if (merged_incoming.account_name == null and dest.account_name != null) {
             merged_incoming.account_name = cloneOptionalStringAlloc(allocator, dest.account_name) catch unreachable;
         }
+        if (merged_incoming.last_usage == null and dest.last_usage != null) {
+            merged_incoming.last_usage = common.cloneRateLimitSnapshot(allocator, dest.last_usage.?) catch unreachable;
+            merged_incoming.last_usage_at = dest.last_usage_at;
+        }
+        if (merged_incoming.last_usage_error == null and dest.last_usage_error != null) {
+            merged_incoming.last_usage_error = cloneOptionalStringAlloc(allocator, dest.last_usage_error) catch unreachable;
+        }
+        if (merged_incoming.last_local_rollout == null and dest.last_local_rollout != null) {
+            merged_incoming.last_local_rollout = common.cloneRolloutSignature(allocator, dest.last_local_rollout.?) catch unreachable;
+        }
         freeAccountRecord(allocator, dest);
         dest.* = merged_incoming;
         return;
@@ -606,6 +635,9 @@ pub fn mergeAccountRecord(allocator: std.mem.Allocator, dest: *AccountRecord, in
     }
     if (dest.account_name == null and merged_incoming.account_name != null) {
         dest.account_name = cloneOptionalStringAlloc(allocator, merged_incoming.account_name) catch unreachable;
+    }
+    if (dest.last_usage_error == null and merged_incoming.last_usage_error != null) {
+        dest.last_usage_error = cloneOptionalStringAlloc(allocator, merged_incoming.last_usage_error) catch unreachable;
     }
     if (dest.plan == null) dest.plan = merged_incoming.plan;
     if (dest.auth_mode == null) dest.auth_mode = merged_incoming.auth_mode;

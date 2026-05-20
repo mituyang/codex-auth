@@ -85,12 +85,17 @@ pub fn filterErroredRowsFromSelectableIndices(allocator: std.mem.Allocator, rows
 }
 
 pub fn usageOverrideForAccount(
+    reg: *const registry.Registry,
     usage_overrides: ?[]const ?[]const u8,
     account_idx: usize,
 ) ?[]const u8 {
-    const overrides = usage_overrides orelse return null;
-    if (account_idx >= overrides.len) return null;
-    return overrides[account_idx];
+    if (usage_overrides) |overrides| {
+        if (account_idx < overrides.len) {
+            if (overrides[account_idx]) |usage_override| return usage_override;
+        }
+    }
+    if (account_idx >= reg.accounts.items.len) return null;
+    return reg.accounts.items[account_idx].last_usage_error;
 }
 
 fn usageCellTextAlloc(
@@ -128,7 +133,7 @@ pub fn buildSwitchRowsWithUsageOverrides(
             const plan = displayPlan(&rec);
             const rate_5h = resolveRateWindow(rec.last_usage, 300, true);
             const rate_week = resolveRateWindow(rec.last_usage, 10080, false);
-            const usage_override = usageOverrideForAccount(usage_overrides, account_idx);
+            const usage_override = usageOverrideForAccount(reg, usage_overrides, account_idx);
             const rate_5h_str = try usageCellTextAlloc(allocator, rate_5h, usage_override);
             const rate_week_str = try usageCellTextAlloc(allocator, rate_week, usage_override);
             const last = try timefmt.formatRelativeTimeOrDashAlloc(allocator, rec.last_usage_at, now);
@@ -236,7 +241,7 @@ pub fn buildSortableRowsWithUsageOverrides(
         const plan = displayPlan(&rec);
         const rate_5h = resolveRateWindow(rec.last_usage, 300, true);
         const rate_week = resolveRateWindow(rec.last_usage, 10080, false);
-        const usage_override = usageOverrideForAccount(usage_overrides, account_idx);
+        const usage_override = usageOverrideForAccount(reg, usage_overrides, account_idx);
         const rate_5h_str = try usageCellTextAlloc(allocator, rate_5h, usage_override);
         errdefer allocator.free(rate_5h_str);
         const rate_week_str = try usageCellTextAlloc(allocator, rate_week, usage_override);
@@ -306,7 +311,7 @@ pub fn buildSwitchRowsFromIndicesWithUsageOverrides(
             const plan = displayPlan(&rec);
             const rate_5h = resolveRateWindow(rec.last_usage, 300, true);
             const rate_week = resolveRateWindow(rec.last_usage, 10080, false);
-            const usage_override = usageOverrideForAccount(usage_overrides, account_idx);
+            const usage_override = usageOverrideForAccount(reg, usage_overrides, account_idx);
             const rate_5h_str = try usageCellTextAlloc(allocator, rate_5h, usage_override);
             const rate_week_str = try usageCellTextAlloc(allocator, rate_week, usage_override);
             const last = try timefmt.formatRelativeTimeOrDashAlloc(allocator, rec.last_usage_at, now);
@@ -548,7 +553,7 @@ fn rateSortValue(
     fallback_primary: bool,
     now: i64,
 ) ?i64 {
-    if (usageOverrideForAccount(usage_overrides, account_idx) != null) return null;
+    if (usageOverrideForAccount(reg, usage_overrides, account_idx) != null) return null;
     const window = resolveRateWindow(reg.accounts.items[account_idx].last_usage, minutes, fallback_primary) orelse return null;
     const reset_at = window.resets_at orelse return null;
     if (now >= reset_at) return 100;

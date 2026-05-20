@@ -102,6 +102,7 @@ pub const AccountRecord = struct {
     last_used_at: ?i64,
     last_usage: ?RateLimitSnapshot,
     last_usage_at: ?i64,
+    last_usage_error: ?[]u8 = null,
     last_local_rollout: ?RolloutSignature,
 };
 
@@ -164,6 +165,7 @@ pub fn freeAccountRecord(allocator: std.mem.Allocator, rec: *const AccountRecord
     allocator.free(rec.email);
     allocator.free(rec.alias);
     if (rec.account_name) |account_name| allocator.free(account_name);
+    if (rec.last_usage_error) |last_usage_error| allocator.free(last_usage_error);
     if (rec.last_local_rollout) |*sig| freeRolloutSignature(allocator, sig);
     if (rec.last_usage) |*u| {
         freeRateLimitSnapshot(allocator, u);

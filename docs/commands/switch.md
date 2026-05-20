@@ -17,8 +17,8 @@ codex-auth switch <query>
 - Numbered fallback output is split into pages of at most 20 account rows.
 - Click a table header to sort by that column; click the same header again to reverse the direction.
 - `--api` forces foreground remote refresh before rendering.
-- `--skip-api` renders from stored data and local-only active-account refresh where available.
-- `codex-auth config switch --skip-api` makes foreground commands that support `--skip-api` default to local-only mode.
+- `--skip-api` renders from stored data and still refreshes the previously active account after a successful switch.
+- Without `--api`, the picker renders from stored data.
 
 ## Live Switch
 
@@ -33,7 +33,7 @@ codex-auth switch <query>
 
 ## Query Switch
 
-`codex-auth switch <query>` resolves the target from stored local data and does not run remote refresh.
+`codex-auth switch <query>` resolves the target from stored local data.
 
 Selectors can match:
 
@@ -48,6 +48,7 @@ If one account matches, it switches immediately. If multiple accounts match, the
 
 When switching succeeds:
 
-1. `auth.json` is backed up when its contents would change.
-2. The selected account snapshot is copied to `~/.codex/auth.json`.
-3. `active_account_key` is updated in `registry.json`.
+1. The previously active account is refreshed once through the usage API.
+2. `auth.json` is backed up when its contents would change.
+3. The selected account snapshot is copied to `~/.codex/auth.json`.
+4. `active_account_key` is updated in `registry.json`.

@@ -64,7 +64,7 @@ pub fn writeHelp(
     if (use_color) try out.writeAll(style.ansi.reset);
     try out.writeAll("\n");
     try out.writeAll("  Run `codex-auth <command> --help` for command-specific usage details.\n");
-    try out.writeAll("  API-backed refresh is the default; use `--skip-api` for a local-only foreground command.\n");
+    try out.writeAll("  Use `--api` for foreground API refresh or `--skip-api` for local-only data.\n");
 }
 
 fn writeCommandSummary(out: *std.Io.Writer, use_color: bool, command: []const u8, description: []const u8) !void {
@@ -270,7 +270,7 @@ fn writeOptionLines(out: *std.Io.Writer, topic: HelpTopic) !void {
         .switch_account => {
             try out.writeAll("  --live       Open the live switch UI.\n");
             try out.writeAll("  --api        Load usage and account data from APIs.\n");
-            try out.writeAll("  --skip-api   Load usage and account data from local data only (may be inaccurate).\n");
+            try out.writeAll("  --skip-api   Render from local data; successful switches still refresh the previous account.\n");
             try out.writeAll("  <alias|email|display-number|query>\n");
             try out.writeAll("               Switch directly when the target resolves to one account.\n");
         },

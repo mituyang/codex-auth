@@ -44,6 +44,10 @@ pub fn switchLiveUsageFieldsEqual(
     const b_last_usage_at = if (maybe_b) |rec| rec.last_usage_at else null;
     if (a_last_usage_at != b_last_usage_at) return false;
 
+    const a_last_usage_error = if (maybe_a) |rec| rec.last_usage_error else null;
+    const b_last_usage_error = if (maybe_b) |rec| rec.last_usage_error else null;
+    if (!optionalBytesEqual(a_last_usage_error, b_last_usage_error)) return false;
+
     const a_last_local_rollout = if (maybe_a) |rec| rec.last_local_rollout else null;
     const b_last_local_rollout = if (maybe_b) |rec| rec.last_local_rollout else null;
     return registry.rolloutSignaturesEqual(a_last_local_rollout, b_last_local_rollout);
@@ -87,6 +91,7 @@ pub fn applySwitchLiveUsageDeltaToLatest(
         registry.updateUsage(allocator, latest, refreshed_rec.account_key, cloned_snapshot);
         latest.accounts.items[latest_idx].last_usage_at = refreshed_rec.last_usage_at;
     }
+    _ = try replaceOptionalOwnedString(allocator, &latest.accounts.items[latest_idx].last_usage_error, refreshed_rec.last_usage_error);
     if (refreshed_rec.last_local_rollout) |signature| {
         try registry.setAccountLastLocalRollout(
             allocator,
@@ -196,6 +201,11 @@ pub fn cloneAccountRecord(allocator: std.mem.Allocator, rec: *const registry.Acc
     else
         null;
     errdefer if (last_usage) |*snapshot| registry.freeRateLimitSnapshot(allocator, snapshot);
+    const last_usage_error = if (rec.last_usage_error) |value|
+        try allocator.dupe(u8, value)
+    else
+        null;
+    errdefer if (last_usage_error) |value| allocator.free(value);
     const last_local_rollout = if (rec.last_local_rollout) |signature|
         try registry.cloneRolloutSignature(allocator, signature)
     else
@@ -215,6 +225,7 @@ pub fn cloneAccountRecord(allocator: std.mem.Allocator, rec: *const registry.Acc
         .last_used_at = rec.last_used_at,
         .last_usage = last_usage,
         .last_usage_at = rec.last_usage_at,
+        .last_usage_error = last_usage_error,
         .last_local_rollout = last_local_rollout,
     };
 }
@@ -226,6 +237,7 @@ pub fn freeOwnedAccountRecord(allocator: std.mem.Allocator, rec: *const registry
     allocator.free(rec.email);
     allocator.free(rec.alias);
     if (rec.account_name) |value| allocator.free(value);
+    if (rec.last_usage_error) |value| allocator.free(value);
     if (rec.last_usage) |*snapshot| registry.freeRateLimitSnapshot(allocator, snapshot);
     if (rec.last_local_rollout) |*signature| registry.freeRolloutSignature(allocator, signature);
 }

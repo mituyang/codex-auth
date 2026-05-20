@@ -211,6 +211,7 @@ fn migrateLegacyRecord(
         .last_used_at = legacy.last_used_at,
         .last_usage = legacy.last_usage,
         .last_usage_at = legacy.last_usage_at,
+        .last_usage_error = null,
         .last_local_rollout = null,
     };
     legacy.last_usage = null;

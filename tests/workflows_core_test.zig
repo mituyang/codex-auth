@@ -795,6 +795,13 @@ test "Scenario: Given foreground usage returns token expired then status overrid
 
     try std.testing.expectEqual(@as(usize, 1), state.failed);
     try std.testing.expectEqualStrings("401", state.usage_overrides[0].?);
+    try std.testing.expectEqualStrings("401", reg.accounts.items[0].last_usage_error.?);
+    try std.testing.expect(reg.accounts.items[0].last_usage_at != null);
+
+    var loaded = try registry.loadRegistry(gpa, codex_home);
+    defer loaded.deinit(gpa);
+    try std.testing.expectEqualStrings("401", loaded.accounts.items[0].last_usage_error.?);
+    try std.testing.expect(loaded.accounts.items[0].last_usage_at != null);
 }
 
 test "Scenario: Given long response error code then status override is truncated to quota display width" {

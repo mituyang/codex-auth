@@ -30,13 +30,13 @@ codex-auth config switch --api|--skip-api
 
 ## API Refresh
 
-API-backed refresh is the default for supported foreground paths. Use per-command `--skip-api` to run a foreground command with local data only. Older `registry.json` files may contain an `api` object; current builds ignore it and omit it on the next registry save.
+Use per-command `--api` to force foreground API refresh, or `--skip-api` to run a foreground command with local data only. Older `registry.json` files may contain an `api` object; current builds ignore it and omit it on the next registry save.
 
 API behavior and endpoint details live in [docs/api.md](../api.md).
 
 ## Foreground API Default
 
-`config switch --skip-api` makes foreground commands that support `--skip-api` use stored local data by default.
+`config switch --skip-api` makes foreground commands that support `--skip-api` use stored local data by default. Successful `switch` operations still refresh the previously active account once.
 
 `config switch --api` restores API-backed refresh as the default.
 

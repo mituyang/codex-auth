@@ -517,6 +517,81 @@ fn runCliWithIsolatedHomeAndPathAndStdin(
     };
 }
 
+fn runCliWithIsolatedHomeAndPathAndStdinAndApiKeyNode(
+    allocator: std.mem.Allocator,
+    project_root: []const u8,
+    home_root: []const u8,
+    path_override: []const u8,
+    fake_node_response_dir: []const u8,
+    args: []const []const u8,
+    stdin_data: []const u8,
+) !std.process.RunResult {
+    const exe_path = try builtCliPathAlloc(allocator, project_root);
+    defer allocator.free(exe_path);
+
+    var argv = std.ArrayList([]const u8).empty;
+    defer argv.deinit(allocator);
+    try argv.append(allocator, exe_path);
+    try argv.appendSlice(allocator, args);
+
+    var env_map = try getEnvMap(allocator);
+    defer env_map.deinit();
+    try env_map.put("HOME", home_root);
+    try env_map.put("USERPROFILE", home_root);
+    _ = env_map.swapRemove("CODEX_HOME");
+    try env_map.put("PATH", path_override);
+    try env_map.put("CODEX_AUTH_SKIP_SERVICE_RECONCILE", "1");
+    try env_map.put("CODEX_FAKE_NODE_RESPONSE_DIR", fake_node_response_dir);
+
+    if (builtin.os.tag == .windows) {
+        try env_map.put("CODEX_AUTH_NODE_EXECUTABLE", "zig-out\\bin\\fake-node.exe");
+    }
+
+    var child = std.process.spawn(fs.io(), .{
+        .argv = argv.items,
+        .cwd = .{ .path = project_root },
+        .environ_map = &env_map,
+        .stdin = .pipe,
+        .stdout = .pipe,
+        .stderr = .pipe,
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.SkipZigTest,
+        else => return err,
+    };
+    defer child.kill(fs.io());
+
+    if (child.stdin) |stdin_pipe| {
+        try fs.wrapFile(stdin_pipe).writeAll(stdin_data);
+        fs.wrapFile(stdin_pipe).close();
+        child.stdin = null;
+    }
+
+    var multi_reader_buffer: std.Io.File.MultiReader.Buffer(2) = undefined;
+    var multi_reader: std.Io.File.MultiReader = undefined;
+    multi_reader.init(allocator, fs.io(), multi_reader_buffer.toStreams(), &.{ child.stdout.?, child.stderr.? });
+    defer multi_reader.deinit();
+
+    const stdout_reader = multi_reader.reader(0);
+    const stderr_reader = multi_reader.reader(1);
+
+    while (multi_reader.fill(64, .none)) |_| {
+        if (stdout_reader.buffered().len > 1024 * 1024) return error.StreamTooLong;
+        if (stderr_reader.buffered().len > 1024 * 1024) return error.StreamTooLong;
+    } else |err| switch (err) {
+        error.EndOfStream => {},
+        else => |e| return e,
+    }
+
+    try multi_reader.checkAnyError();
+    const term = try child.wait(fs.io());
+
+    return .{
+        .stdout = try multi_reader.toOwnedSlice(0),
+        .stderr = try multi_reader.toOwnedSlice(1),
+        .term = term,
+    };
+}
+
 fn runCliWithIsolatedHomeAndStdin(
     allocator: std.mem.Allocator,
     project_root: []const u8,
@@ -1716,7 +1791,7 @@ test "Scenario: Given default api usage when rendering help then skip-api note s
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "codex-auth") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Usage API:") == null);
     try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Account API:") == null);
-    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "API-backed refresh is the default") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Use `--api` for foreground API refresh") != null);
     try std.testing.expectEqualStrings("", result.stderr);
 }
 
@@ -1786,6 +1861,147 @@ test "Scenario: Given switch query with a direct local match when running switch
     defer loaded.deinit(gpa);
     try std.testing.expect(loaded.active_account_key != null);
     try std.testing.expect(std.mem.eql(u8, loaded.active_account_key.?, backup_key));
+}
+
+test "Scenario: Given switch succeeds with usage api available then it refreshes only the previous active account" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+
+    try seedRegistryWithAccounts(gpa, home_root, "active@example.com", &[_]SeedAccount{
+        .{ .email = "active@example.com", .alias = "active" },
+        .{ .email = "backup@example.com", .alias = "backup" },
+    });
+
+    const codex_home = try codexHomeAlloc(gpa, home_root);
+    defer gpa.free(codex_home);
+    const active_key = try fixtures.accountKeyForEmailAlloc(gpa, "active@example.com");
+    defer gpa.free(active_key);
+    const backup_key = try fixtures.accountKeyForEmailAlloc(gpa, "backup@example.com");
+    defer gpa.free(backup_key);
+    const active_snapshot_path = try registry.accountAuthPath(gpa, codex_home, active_key);
+    defer gpa.free(active_snapshot_path);
+    const backup_snapshot_path = try registry.accountAuthPath(gpa, codex_home, backup_key);
+    defer gpa.free(backup_snapshot_path);
+
+    const active_auth = try fixtures.authJsonWithEmailPlan(gpa, "active@example.com", "team");
+    defer gpa.free(active_auth);
+    const backup_auth = try fixtures.authJsonWithEmailPlan(gpa, "backup@example.com", "plus");
+    defer gpa.free(backup_auth);
+
+    try tmp.dir.writeFile(.{ .sub_path = ".codex/auth.json", .data = active_auth });
+    try fs.cwd().writeFile(.{ .sub_path = active_snapshot_path, .data = active_auth });
+    try fs.cwd().writeFile(.{ .sub_path = backup_snapshot_path, .data = backup_auth });
+    try writeApiKeyFlowFakeNode(gpa, tmp.dir, project_root);
+
+    const fake_node_dir = try tmp.dir.realpathAlloc(gpa, "fake-node-bin");
+    defer gpa.free(fake_node_dir);
+    const path_override = try prependPathEntryAlloc(gpa, fake_node_dir);
+    defer gpa.free(path_override);
+
+    const result = try runCliWithIsolatedHomeAndPathAndApiKeyNode(
+        gpa,
+        project_root,
+        home_root,
+        path_override,
+        fake_node_dir,
+        &[_][]const u8{ "switch", "backup@" },
+    );
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+
+    try expectSuccess(result);
+    try std.testing.expectEqualStrings("Switched to backup\n", result.stdout);
+    try std.testing.expectEqualStrings("", result.stderr);
+
+    var loaded = try registry.loadRegistry(gpa, codex_home);
+    defer loaded.deinit(gpa);
+    try std.testing.expectEqualStrings(backup_key, loaded.active_account_key.?);
+
+    const active_idx = registry.findAccountIndexByAccountKey(&loaded, active_key) orelse return error.TestExpectedEqual;
+    const backup_idx = registry.findAccountIndexByAccountKey(&loaded, backup_key) orelse return error.TestExpectedEqual;
+    try std.testing.expect(loaded.accounts.items[active_idx].last_usage != null);
+    try std.testing.expectEqual(@as(f64, 12), loaded.accounts.items[active_idx].last_usage.?.primary.?.used_percent);
+    try std.testing.expectEqual(@as(f64, 34), loaded.accounts.items[active_idx].last_usage.?.secondary.?.used_percent);
+    try std.testing.expect(loaded.accounts.items[backup_idx].last_usage == null);
+}
+
+test "Scenario: Given switch with skip-api succeeds with usage api available then it refreshes the previous active account" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+
+    try seedRegistryWithAccounts(gpa, home_root, "active@example.com", &[_]SeedAccount{
+        .{ .email = "active@example.com", .alias = "active" },
+        .{ .email = "backup@example.com", .alias = "backup" },
+    });
+
+    const codex_home = try codexHomeAlloc(gpa, home_root);
+    defer gpa.free(codex_home);
+    const active_key = try fixtures.accountKeyForEmailAlloc(gpa, "active@example.com");
+    defer gpa.free(active_key);
+    const backup_key = try fixtures.accountKeyForEmailAlloc(gpa, "backup@example.com");
+    defer gpa.free(backup_key);
+    const active_snapshot_path = try registry.accountAuthPath(gpa, codex_home, active_key);
+    defer gpa.free(active_snapshot_path);
+    const backup_snapshot_path = try registry.accountAuthPath(gpa, codex_home, backup_key);
+    defer gpa.free(backup_snapshot_path);
+
+    const active_auth = try fixtures.authJsonWithEmailPlan(gpa, "active@example.com", "team");
+    defer gpa.free(active_auth);
+    const backup_auth = try fixtures.authJsonWithEmailPlan(gpa, "backup@example.com", "plus");
+    defer gpa.free(backup_auth);
+
+    try tmp.dir.writeFile(.{ .sub_path = ".codex/auth.json", .data = active_auth });
+    try fs.cwd().writeFile(.{ .sub_path = active_snapshot_path, .data = active_auth });
+    try fs.cwd().writeFile(.{ .sub_path = backup_snapshot_path, .data = backup_auth });
+    try writeApiKeyFlowFakeNode(gpa, tmp.dir, project_root);
+
+    const fake_node_dir = try tmp.dir.realpathAlloc(gpa, "fake-node-bin");
+    defer gpa.free(fake_node_dir);
+    const path_override = try prependPathEntryAlloc(gpa, fake_node_dir);
+    defer gpa.free(path_override);
+
+    const result = try runCliWithIsolatedHomeAndPathAndStdinAndApiKeyNode(
+        gpa,
+        project_root,
+        home_root,
+        path_override,
+        fake_node_dir,
+        &[_][]const u8{ "switch", "--skip-api" },
+        "2\n",
+    );
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+
+    try expectSuccess(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Switched to backup") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+
+    var loaded = try registry.loadRegistry(gpa, codex_home);
+    defer loaded.deinit(gpa);
+    try std.testing.expectEqualStrings(backup_key, loaded.active_account_key.?);
+
+    const active_idx = registry.findAccountIndexByAccountKey(&loaded, active_key) orelse return error.TestExpectedEqual;
+    const backup_idx = registry.findAccountIndexByAccountKey(&loaded, backup_key) orelse return error.TestExpectedEqual;
+    try std.testing.expect(loaded.accounts.items[active_idx].last_usage != null);
+    try std.testing.expectEqual(@as(f64, 12), loaded.accounts.items[active_idx].last_usage.?.primary.?.used_percent);
+    try std.testing.expectEqual(@as(f64, 34), loaded.accounts.items[active_idx].last_usage.?.secondary.?.used_percent);
+    try std.testing.expect(loaded.accounts.items[backup_idx].last_usage == null);
 }
 
 test "Scenario: Given switch query with multiple matches when running switch then it asks for one account and switches only that account" {
@@ -2090,7 +2306,43 @@ test "Scenario: Given switch query with skip-api flag when running switch then i
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "does not support `--live`, `--api`, or `--skip-api`") != null);
 }
 
-test "Scenario: Given switch without api flags when running interactively then it requires api refresh executables by default" {
+test "Scenario: Given switch with api flag when running interactively then it requires api refresh executables" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+
+    try seedRegistryWithAccounts(gpa, home_root, "active@example.com", &[_]SeedAccount{
+        .{ .email = "active@example.com", .alias = "active" },
+        .{ .email = "backup@example.com", .alias = "backup" },
+    });
+
+    try tmp.dir.makePath("empty-bin");
+    const empty_path = try tmp.dir.realpathAlloc(gpa, "empty-bin");
+    defer gpa.free(empty_path);
+
+    const result = try runCliWithIsolatedHomeAndPathAndStdin(
+        gpa,
+        project_root,
+        home_root,
+        empty_path,
+        &[_][]const u8{ "switch", "--api" },
+        "2\n",
+    );
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+
+    try expectFailure(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "Node.js 22+") != null);
+}
+
+test "Scenario: Given switch without api flags when running interactively then it uses stored data by default" {
     const gpa = std.testing.allocator;
     const project_root = try projectRootAlloc(gpa);
     defer gpa.free(project_root);
@@ -2117,13 +2369,14 @@ test "Scenario: Given switch without api flags when running interactively then i
         home_root,
         empty_path,
         &[_][]const u8{"switch"},
-        "2\n",
+        "q\n",
     );
     defer gpa.free(result.stdout);
     defer gpa.free(result.stderr);
 
-    try expectFailure(result);
-    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "Node.js 22+") != null);
+    try expectSuccess(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "Select account to activate:") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
 }
 
 test "Scenario: Given switch with skip-api when running interactively then it does not require api refresh executables" {

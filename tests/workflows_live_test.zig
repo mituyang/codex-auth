@@ -387,6 +387,7 @@ test "switch live action does not wait for an in-flight refresh" {
     defer reg.deinit(gpa);
     try appendLiveMergeTestAccount(gpa, &reg, alpha_key, "alpha@example.com", "");
     try appendLiveMergeTestAccount(gpa, &reg, beta_key, "beta@example.com", "");
+    reg.accounts.items[0].auth_mode = .apikey;
     try registry.setActiveAccountKey(gpa, &reg, alpha_key);
     try registry.saveRegistry(gpa, codex_home, &reg);
     try writeLiveActionTestSnapshot(gpa, codex_home, alpha_key, "alpha@example.com", "team");

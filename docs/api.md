@@ -46,14 +46,17 @@ The `accounts/check` response is parsed by `chatgpt_account_id`. `name: null` an
 - each background attempt chooses randomly from the five eligible accounts with the oldest `LAST ACTIVITY`; records with no usage timestamp are treated as oldest.
 - background refresh skips API-key accounts.
 - `login` attempts an active-account usage refresh immediately after the new ChatGPT account is stored and activated.
-- by default, `list` and interactive `switch` refresh all stored accounts before rendering, using stored auth snapshots under `accounts/` with a maximum concurrency of `3`
+- by default, `list` refreshes stored accounts before rendering, using stored auth snapshots under `accounts/` with a maximum concurrency of `3`
+- plain interactive `switch` renders from stored data; `switch --api` forces a foreground remote refresh before rendering
+- after a successful `switch`, the previously active account is refreshed once through the usage API
 - when one of those per-account foreground usage requests returns a non-`200` HTTP status, the corresponding `list` / `switch` row shows that response status in both usage columns until a later successful refresh replaces it
+- usage refresh failures are persisted as `last_usage_error`; later `list` / `switch` runs use the stored error when no newer foreground overlay is present
 - when a stored account snapshot cannot make a ChatGPT usage request because it is missing the required ChatGPT auth fields, the corresponding `list` / `switch` row shows `MissingAuth` in both usage columns until a later successful refresh replaces it
-- with `--skip-api`, foreground refresh still uses only the active local rollout data because local session files do not identify the other stored accounts
-- `list` and interactive `switch` use the API-backed path by default; `--api` is accepted as an explicit equivalent
-- `list --skip-api` and interactive `switch --skip-api` disable the foreground usage API path for that command
+- before rendering, `--skip-api` uses only the active local rollout data because local session files do not identify the other stored accounts
+- `list` uses the API-backed path by default; `--api` is accepted as an explicit equivalent
+- `list --skip-api` and plain interactive `switch` use stored local data for rendering; a successful `switch` still refreshes the previously active account once afterward
 - `switch --live` still excludes errored rows from candidate selection, and it also skips candidates whose current displayed 5h or weekly value is already `0%`
-- single-shot `switch --skip-api` skips the pre-render refresh round entirely and shows the stored registry picker directly
+- single-shot `switch` skips the pre-render refresh round entirely and shows the stored registry picker directly unless `--api` is provided
 - `switch <query>` always resolves selectors locally from stored data and does not accept `--live`, `--api`, or `--skip-api`
 - interactive `remove`, including `remove --live`, always stays local-only and never makes foreground usage API requests
 - `remove <query>` and `remove --all` always resolve selectors from stored local data and do not accept `--live`

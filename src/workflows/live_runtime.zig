@@ -7,6 +7,7 @@ const targets = @import("targets.zig");
 const workflow_env = @import("env.zig");
 const live_types = @import("live_types.zig");
 const live_display = @import("live_display.zig");
+const switch_refresh = @import("switch_refresh.zig");
 
 const ForegroundUsageRefreshTarget = targets.ForegroundUsageRefreshTarget;
 const SwitchLiveRefreshPolicy = live_types.SwitchLiveRefreshPolicy;
@@ -404,6 +405,11 @@ pub fn switchLiveRuntimeApplySelection(
         try registry.saveRegistry(allocator, runtime.codex_home, &reg);
     }
 
+    try switch_refresh.refreshPreviousActiveUsageBeforeSwitch(
+        allocator,
+        runtime.codex_home,
+        &reg,
+    );
     try registry.activateAccountByKey(allocator, runtime.codex_home, &reg, account_key);
     try registry.saveRegistry(allocator, runtime.codex_home, &reg);
 

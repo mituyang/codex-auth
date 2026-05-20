@@ -428,6 +428,11 @@ pub fn refreshForegroundUsageForDisplayWithApiFetchersWithPoolInitUsingApiEnable
                 registry_changed = true;
             }
         } else if (try setForegroundUsageOverrideForOutcome(allocator, &state.usage_overrides[idx], outcome.*)) {
+            if (state.usage_overrides[idx]) |usage_override| {
+                if (try registry.setAccountLastUsageError(allocator, reg, reg.accounts.items[idx].account_key, usage_override)) {
+                    registry_changed = true;
+                }
+            }
             state.failed += 1;
         } else {
             outcome.unchanged = true;

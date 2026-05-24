@@ -121,7 +121,7 @@ pub fn writeAccountsTableWithUsageOverrides(
             defer std.heap.page_allocator.free(rate_5h_str);
             const rate_week_str = try usageCellFullTextAlloc(std.heap.page_allocator, rate_week, usage_override);
             defer std.heap.page_allocator.free(rate_week_str);
-            const last_str = try timefmt.formatRelativeTimeOrDashAlloc(std.heap.page_allocator, rec.last_usage_at, now);
+            const last_str = try timefmt.formatRelativeTimeOrDashAlloc(std.heap.page_allocator, registry.accountLastActivityAt(&rec), now);
             defer std.heap.page_allocator.free(last_str);
 
             widths[1] = @max(widths[1], plan.len);
@@ -175,7 +175,7 @@ pub fn writeAccountsTableWithUsageOverrides(
             defer std.heap.page_allocator.free(rate_5h_str);
             const rate_week_str = try usageCellTextAlloc(std.heap.page_allocator, rate_week, widths[3], usage_override);
             defer std.heap.page_allocator.free(rate_week_str);
-            const last = try timefmt.formatRelativeTimeOrDashAlloc(std.heap.page_allocator, rec.last_usage_at, now);
+            const last = try timefmt.formatRelativeTimeOrDashAlloc(std.heap.page_allocator, registry.accountLastActivityAt(&rec), now);
             defer std.heap.page_allocator.free(last);
             const indent: usize = @as(usize, row.depth) * 2;
             const indent_to_print: usize = @min(indent, widths[0]);

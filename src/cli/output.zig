@@ -343,3 +343,16 @@ pub fn writeCodexLoginLaunchFailureHintTo(out: *std.Io.Writer, err_name: []const
         try out.writeAll(" Try running `codex login` manually, then retry your command.\n");
     }
 }
+
+pub fn writeCodexLoginProcessFailureHintTo(out: *std.Io.Writer, device_auth: bool, use_color: bool) !void {
+    try writeErrorPrefixTo(out, use_color);
+    if (device_auth) {
+        try out.writeAll(" `codex login --device-auth` did not complete successfully.\n\n");
+        try writeHintPrefixTo(out, use_color);
+        try out.writeAll(" Run `codex login --device-auth` manually, then retry `codex-auth login --device-auth`.\n");
+    } else {
+        try out.writeAll(" `codex login` did not complete successfully.\n\n");
+        try writeHintPrefixTo(out, use_color);
+        try out.writeAll(" If browser login shows Route Error 403 or a Cloudflare challenge, retry with `codex-auth login --device-auth`.\n");
+    }
+}

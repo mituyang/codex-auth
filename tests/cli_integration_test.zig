@@ -928,6 +928,74 @@ test "Scenario: Given device auth login when running login then it forwards the 
     try std.testing.expectEqualStrings(fake_auth, active_auth);
 }
 
+test "Scenario: Given device auth login for active existing account when running login then last activity is touched" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    try tmp.dir.makePath(".codex");
+    try tmp.dir.makePath("fake-bin");
+
+    const expected_email = "existing-device@example.com";
+    const fake_auth = try fixtures.authJsonWithEmailPlan(gpa, expected_email, "plus");
+    defer gpa.free(fake_auth);
+    try tmp.dir.writeFile(.{ .sub_path = "fake-auth.json", .data = fake_auth });
+    try writeSuccessfulFakeCodex(tmp.dir);
+    try writeApiKeyFlowFakeNode(gpa, tmp.dir, project_root);
+
+    const codex_home = try codexHomeAlloc(gpa, home_root);
+    defer gpa.free(codex_home);
+    var reg = fixtures.makeEmptyRegistry();
+    defer reg.deinit(gpa);
+    try fixtures.appendAccount(gpa, &reg, expected_email, "", .plus);
+    const expected_account_key = try fixtures.accountKeyForEmailAlloc(gpa, expected_email);
+    defer gpa.free(expected_account_key);
+    try registry.setActiveAccountKey(gpa, &reg, expected_account_key);
+    const idx = registry.findAccountIndexByAccountKey(&reg, expected_account_key) orelse return error.TestExpectedEqual;
+    registry.updateUsage(gpa, &reg, expected_account_key, makeUsageSnapshot(1, 2));
+    reg.accounts.items[idx].last_used_at = 10;
+    reg.accounts.items[idx].last_usage_at = 20;
+    reg.active_account_activated_at_ms = 30_000;
+    try registry.saveRegistry(gpa, codex_home, &reg);
+
+    const fake_bin_path = try fs.path.join(gpa, &[_][]const u8{ home_root, "fake-bin" });
+    defer gpa.free(fake_bin_path);
+    const fake_node_dir = try tmp.dir.realpathAlloc(gpa, "fake-node-bin");
+    defer gpa.free(fake_node_dir);
+    const path_override = try prependTwoPathEntriesAlloc(gpa, fake_bin_path, fake_node_dir);
+    defer gpa.free(path_override);
+
+    const result = try runCliWithIsolatedHomeAndPathAndApiKeyNode(
+        gpa,
+        project_root,
+        home_root,
+        path_override,
+        fake_node_dir,
+        &[_][]const u8{ "login", "--device-auth" },
+    );
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+
+    try expectSuccess(result);
+
+    var loaded = try registry.loadRegistry(gpa, codex_home);
+    defer loaded.deinit(gpa);
+    const loaded_idx = registry.findAccountIndexByAccountKey(&loaded, expected_account_key) orelse return error.TestExpectedEqual;
+    try std.testing.expect(loaded.accounts.items[loaded_idx].last_used_at != null);
+    try std.testing.expect(loaded.accounts.items[loaded_idx].last_used_at.? > 10);
+    try std.testing.expect(loaded.accounts.items[loaded_idx].last_usage_at != null);
+    try std.testing.expect(loaded.accounts.items[loaded_idx].last_usage_at.? > 20);
+    try std.testing.expect(loaded.active_account_activated_at_ms != null);
+    try std.testing.expect(loaded.active_account_activated_at_ms.? > 30_000);
+    try std.testing.expectEqual(loaded.accounts.items[loaded_idx].last_usage_at.?, registry.accountLastActivityAt(&loaded.accounts.items[loaded_idx]).?);
+}
+
 test "Scenario: Given CODEX_HOME override when running login then it stores auth state under the override root" {
     const gpa = std.testing.allocator;
     const project_root = try projectRootAlloc(gpa);
@@ -1023,7 +1091,8 @@ test "Scenario: Given failed device auth login with existing auth json when runn
 
     try expectFailure(result);
     try std.testing.expectEqualStrings("", result.stdout);
-    try std.testing.expectEqualStrings("", result.stderr);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "`codex login --device-auth` did not complete successfully.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "codex-auth login --device-auth") != null);
 
     const argv_path = try fs.path.join(gpa, &[_][]const u8{ home_root, "fake-codex-argv.txt" });
     defer gpa.free(argv_path);

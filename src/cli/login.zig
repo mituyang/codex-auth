@@ -11,13 +11,17 @@ pub fn codexLoginArgs(opts: types.LoginOptions) []const []const u8 {
         &[_][]const u8{ "codex", "login" };
 }
 
-fn ensureCodexLoginSucceeded(term: std.process.Child.Term) !void {
+fn ensureCodexLoginSucceeded(term: std.process.Child.Term, opts: types.LoginOptions) !void {
     switch (term) {
         .exited => |code| {
             if (code == 0) return;
+            writeCodexLoginProcessFailureHint(opts) catch {};
             return error.CodexLoginFailed;
         },
-        else => return error.CodexLoginFailed,
+        else => {
+            writeCodexLoginProcessFailureHint(opts) catch {};
+            return error.CodexLoginFailed;
+        },
     }
 }
 
@@ -26,6 +30,14 @@ fn writeCodexLoginLaunchFailureHint(err_name: []const u8) !void {
     var writer = std.Io.File.stderr().writer(app_runtime.io(), &buffer);
     const out = &writer.interface;
     try output.writeCodexLoginLaunchFailureHintTo(out, err_name, style.stderrColorEnabled());
+    try out.flush();
+}
+
+fn writeCodexLoginProcessFailureHint(opts: types.LoginOptions) !void {
+    var buffer: [1024]u8 = undefined;
+    var writer = std.Io.File.stderr().writer(app_runtime.io(), &buffer);
+    const out = &writer.interface;
+    try output.writeCodexLoginProcessFailureHintTo(out, opts.device_auth, style.stderrColorEnabled());
     try out.flush();
 }
 
@@ -43,5 +55,5 @@ pub fn runCodexLogin(opts: types.LoginOptions) !void {
         writeCodexLoginLaunchFailureHint(@errorName(err)) catch {};
         return err;
     };
-    try ensureCodexLoginSucceeded(term);
+    try ensureCodexLoginSucceeded(term, opts);
 }

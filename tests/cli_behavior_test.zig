@@ -770,6 +770,19 @@ test "Scenario: Given codex login client missing when rendering then detection h
     try std.testing.expect(std.mem.indexOf(u8, hint, "Ensure the Codex CLI is installed and available in your environment.") != null);
 }
 
+test "Scenario: Given browser codex login failure when rendering then device auth hint is included" {
+    const gpa = std.testing.allocator;
+    var aw: std.Io.Writer.Allocating = .init(gpa);
+    defer aw.deinit();
+
+    try cli.output.writeCodexLoginProcessFailureHintTo(&aw.writer, false, false);
+
+    const hint = aw.written();
+    try std.testing.expect(std.mem.indexOf(u8, hint, "`codex login` did not complete successfully.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, hint, "Route Error 403") != null);
+    try std.testing.expect(std.mem.indexOf(u8, hint, "codex-auth login --device-auth") != null);
+}
+
 test "Scenario: Given login help when rendering then device auth usage is included" {
     const gpa = std.testing.allocator;
     var aw: std.Io.Writer.Allocating = .init(gpa);

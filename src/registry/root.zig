@@ -33,6 +33,7 @@ pub const LiveConfig = common.LiveConfig;
 pub const AccountRecord = common.AccountRecord;
 pub const resolvePlan = common.resolvePlan;
 pub const resolveDisplayPlan = common.resolveDisplayPlan;
+pub const accountLastActivityAt = common.accountLastActivityAt;
 pub const planLabel = common.planLabel;
 pub const Registry = common.Registry;
 pub const defaultApiConfig = common.defaultApiConfig;
@@ -118,8 +119,10 @@ pub const exportAccounts = export_mod.exportAccounts;
 
 pub const findAccountIndexByAccountKey = account_ops.findAccountIndexByAccountKey;
 pub const setActiveAccountKey = account_ops.setActiveAccountKey;
+pub const touchAccountUse = account_ops.touchAccountUse;
 pub const updateUsage = account_ops.updateUsage;
 pub const setAccountLastUsageError = account_ops.setAccountLastUsageError;
+pub const clearAccountLastUsageError = account_ops.clearAccountLastUsageError;
 pub fn syncActiveAccountFromAuth(allocator: std.mem.Allocator, codex_home: []const u8, reg: *Registry) !bool {
     return account_ops.syncActiveAccountFromAuthWithImporter(allocator, codex_home, reg, autoImportActiveAuth);
 }
@@ -139,6 +142,7 @@ pub const accountFromApiKeyMe = account_ops.accountFromApiKeyMe;
 pub const apiKeyAccountKeyAlloc = account_ops.apiKeyAccountKeyAlloc;
 pub const apiKeyAccountNameAlloc = account_ops.apiKeyAccountNameAlloc;
 pub const upsertAccount = account_ops.upsertAccount;
+pub const reconcileLegacyChatGptAccountId = account_ops.reconcileLegacyChatGptAccountId;
 const syncActiveAccountFromAuthWithImporter = account_ops.syncActiveAccountFromAuthWithImporter;
 
 pub const loadRegistry = storage.loadRegistry;

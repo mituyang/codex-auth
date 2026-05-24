@@ -119,6 +119,14 @@ pub fn resolveDisplayPlan(rec: *const AccountRecord) ?PlanType {
     return resolvePlan(rec);
 }
 
+pub fn accountLastActivityAt(rec: *const AccountRecord) ?i64 {
+    var best = rec.last_usage_at;
+    if (rec.last_used_at) |last_used_at| {
+        if (best == null or last_used_at > best.?) best = last_used_at;
+    }
+    return best;
+}
+
 pub fn planLabel(plan: PlanType) []const u8 {
     return switch (plan) {
         .free => "Free",

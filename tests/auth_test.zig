@@ -93,6 +93,42 @@ test "parse auth info uses default organization when account id is missing" {
     try std.testing.expect(std.mem.eql(u8, info.record_key.?, expected_record_key));
 }
 
+test "parse auth info keeps token account id and tracks organization fallback" {
+    const gpa = std.testing.allocator;
+    const token_account_id = "229aae0d-cb75-4046-ad93-ea70980b7ac4";
+    const legacy_account_id = "org-9Y9khpav54nR938iRk4MGERT";
+    const chatgpt_user_id = "user-nPIOQnPPd5qaQBNZtwD2LVUR";
+
+    const header = "{\"alg\":\"none\",\"typ\":\"JWT\"}";
+    const payload = "{\"email\":\"vsg@searchsomething.site\",\"https://api.openai.com/auth\":{\"organizations\":[{\"id\":\"org-9Y9khpav54nR938iRk4MGERT\",\"is_default\":true,\"role\":\"owner\",\"title\":\"Default\"}],\"groups\":[],\"localhost\":true,\"user_id\":\"user-nPIOQnPPd5qaQBNZtwD2LVUR\"}}";
+
+    const h64 = try b64url(gpa, header);
+    defer gpa.free(h64);
+    const p64 = try b64url(gpa, payload);
+    defer gpa.free(p64);
+
+    const jwt = try std.mem.concat(gpa, u8, &[_][]const u8{ h64, ".", p64, ".sig" });
+    defer gpa.free(jwt);
+
+    const json = try std.fmt.allocPrint(
+        gpa,
+        "{{\"tokens\":{{\"access_token\":\"access-vsg\",\"account_id\":\"{s}\",\"id_token\":\"{s}\"}}}}",
+        .{ token_account_id, jwt },
+    );
+    defer gpa.free(json);
+
+    const info = try auth.parseAuthInfoData(gpa, json);
+    defer info.deinit(gpa);
+    try std.testing.expect(info.chatgpt_account_id != null);
+    try std.testing.expectEqualStrings(token_account_id, info.chatgpt_account_id.?);
+    try std.testing.expect(info.legacy_chatgpt_account_id != null);
+    try std.testing.expectEqualStrings(legacy_account_id, info.legacy_chatgpt_account_id.?);
+    try std.testing.expect(info.record_key != null);
+    const expected_record_key = try std.fmt.allocPrint(gpa, "{s}::{s}", .{ chatgpt_user_id, token_account_id });
+    defer gpa.free(expected_record_key);
+    try std.testing.expectEqualStrings(expected_record_key, info.record_key.?);
+}
+
 test "api key auth" {
     const gpa = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});

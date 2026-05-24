@@ -666,7 +666,8 @@ pub fn formatStatusOverrideAlloc(
     status_writer.print("{d}", .{status_code}) catch unreachable;
     const status_text = status_writer.buffered();
 
-    const code = if (shouldDisplayStatusErrorCode(status_code, error_code)) |value| value else "";
+    var maybe_error_code = error_code;
+    const code = if (maybe_error_code) |*value| shouldDisplayStatusErrorCode(status_code, value) orelse "" else "";
     if (code.len == 0 or status_text.len + 1 >= max_usage_override_display_width) {
         return allocator.dupe(u8, status_text);
     }
@@ -683,10 +684,9 @@ pub fn formatStatusOverrideAlloc(
 
 fn shouldDisplayStatusErrorCode(
     status_code: u16,
-    error_code: ?usage_api.ResponseErrorCode,
+    error_code: *const usage_api.ResponseErrorCode,
 ) ?[]const u8 {
-    const value = error_code orelse return null;
-    const code = value.text();
+    const code = error_code.text();
     if (status_code == 401 and std.mem.eql(u8, code, "token_expired")) return null;
     return code;
 }

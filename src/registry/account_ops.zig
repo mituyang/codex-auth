@@ -67,6 +67,22 @@ pub fn setActiveAccountKey(allocator: std.mem.Allocator, reg: *Registry, account
     }
 }
 
+pub fn touchAccountUse(reg: *Registry, account_key: []const u8) void {
+    const now_ms = std.Io.Timestamp.now(app_runtime.io(), .real).toMilliseconds();
+    const now = @divTrunc(now_ms, 1000);
+    if (reg.active_account_key) |k| {
+        if (std.mem.eql(u8, k, account_key)) {
+            reg.active_account_activated_at_ms = now_ms;
+        }
+    }
+    for (reg.accounts.items) |*rec| {
+        if (std.mem.eql(u8, rec.account_key, account_key)) {
+            rec.last_used_at = now;
+            break;
+        }
+    }
+}
+
 pub fn updateUsage(allocator: std.mem.Allocator, reg: *Registry, account_key: []const u8, snapshot: RateLimitSnapshot) void {
     const now = std.Io.Timestamp.now(app_runtime.io(), .real).toSeconds();
     for (reg.accounts.items) |*rec| {
@@ -95,6 +111,20 @@ pub fn setAccountLastUsageError(allocator: std.mem.Allocator, reg: *Registry, ac
             const usage_at_changed = rec.last_usage_at == null or rec.last_usage_at.? != now;
             rec.last_usage_at = now;
             return error_changed or usage_at_changed;
+        }
+    }
+    return false;
+}
+
+pub fn clearAccountLastUsageError(allocator: std.mem.Allocator, reg: *Registry, account_key: []const u8) bool {
+    for (reg.accounts.items) |*rec| {
+        if (std.mem.eql(u8, rec.account_key, account_key)) {
+            if (rec.last_usage_error) |last_usage_error| {
+                allocator.free(last_usage_error);
+                rec.last_usage_error = null;
+                return true;
+            }
+            return false;
         }
     }
     return false;
@@ -148,6 +178,7 @@ pub fn syncActiveAccountFromAuthWithImporter(allocator: std.mem.Allocator, codex
         errdefer if (record_owned) freeAccountRecord(allocator, &record);
         try upsertAccount(allocator, reg, record);
         record_owned = false;
+        _ = try reconcileLegacyChatGptAccountId(allocator, codex_home, reg, &info);
         try setActiveAccountKey(allocator, reg, record_key);
         return true;
     }
@@ -178,13 +209,21 @@ pub fn syncActiveAccountFromAuthWithImporter(allocator: std.mem.Allocator, codex
 
     const dest = try accountAuthPath(allocator, codex_home, rec_account_key);
     defer allocator.free(dest);
+    var auth_snapshot_changed = false;
     if (!(try fileEqualsBytes(allocator, dest, auth_bytes))) {
         try copyManagedFile(auth_path, dest);
         changed = true;
+        auth_snapshot_changed = true;
     } else {
         try hardenSensitiveFile(dest);
     }
+    if (auth_snapshot_changed and clearAccountLastUsageError(allocator, reg, rec_account_key)) {
+        changed = true;
+    }
 
+    if (try reconcileLegacyChatGptAccountId(allocator, codex_home, reg, &info)) {
+        changed = true;
+    }
     try setActiveAccountKey(allocator, reg, rec_account_key);
     return changed;
 }
@@ -652,4 +691,67 @@ pub fn upsertAccount(allocator: std.mem.Allocator, reg: *Registry, record: Accou
         }
     }
     try reg.accounts.append(allocator, record);
+}
+
+pub fn reconcileLegacyChatGptAccountId(
+    allocator: std.mem.Allocator,
+    codex_home: []const u8,
+    reg: *Registry,
+    info: *const @import("../auth/auth.zig").AuthInfo,
+) !bool {
+    if (info.auth_mode != .chatgpt) return false;
+    const record_key = info.record_key orelse return false;
+    const current_account_id = info.chatgpt_account_id orelse return false;
+    const legacy_account_id = info.legacy_chatgpt_account_id orelse return false;
+    if (std.mem.eql(u8, current_account_id, legacy_account_id)) return false;
+    const chatgpt_user_id = info.chatgpt_user_id orelse return false;
+
+    const current_idx = findAccountIndexByAccountKey(reg, record_key) orelse return false;
+    const legacy_idx = findLegacyChatGptAccountIndex(reg, current_idx, chatgpt_user_id, legacy_account_id, info.email) orelse return false;
+
+    try preserveUsefulLegacyAccountData(allocator, &reg.accounts.items[current_idx], &reg.accounts.items[legacy_idx]);
+    var removed = [_]usize{legacy_idx};
+    try removeAccounts(allocator, codex_home, reg, &removed);
+    return true;
+}
+
+fn findLegacyChatGptAccountIndex(
+    reg: *const Registry,
+    current_idx: usize,
+    chatgpt_user_id: []const u8,
+    legacy_account_id: []const u8,
+    maybe_email: ?[]const u8,
+) ?usize {
+    for (reg.accounts.items, 0..) |*rec, idx| {
+        if (idx == current_idx) continue;
+        if (rec.auth_mode) |mode| {
+            if (mode != .chatgpt) continue;
+        }
+        if (!std.mem.eql(u8, rec.chatgpt_user_id, chatgpt_user_id)) continue;
+        if (!std.mem.eql(u8, rec.chatgpt_account_id, legacy_account_id)) continue;
+        if (maybe_email) |email| {
+            if (!std.mem.eql(u8, rec.email, email)) continue;
+        }
+        return idx;
+    }
+    return null;
+}
+
+fn preserveUsefulLegacyAccountData(allocator: std.mem.Allocator, current: *AccountRecord, legacy: *const AccountRecord) !void {
+    if (current.alias.len == 0 and legacy.alias.len != 0) {
+        const alias = try allocator.dupe(u8, legacy.alias);
+        allocator.free(current.alias);
+        current.alias = alias;
+    }
+    if (current.account_name == null and legacy.account_name != null) {
+        current.account_name = try cloneOptionalStringAlloc(allocator, legacy.account_name);
+    }
+    if (current.plan == null) current.plan = legacy.plan;
+    if (current.last_usage == null and legacy.last_usage != null) {
+        current.last_usage = try common.cloneRateLimitSnapshot(allocator, legacy.last_usage.?);
+        current.last_usage_at = legacy.last_usage_at;
+    }
+    if (current.last_local_rollout == null and legacy.last_local_rollout != null) {
+        current.last_local_rollout = try common.cloneRolloutSignature(allocator, legacy.last_local_rollout.?);
+    }
 }

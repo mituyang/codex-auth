@@ -5,6 +5,7 @@ const cli = @import("../cli/root.zig");
 const io_util = @import("../core/io_util.zig");
 const registry = @import("../registry/root.zig");
 const usage_api = @import("../api/usage.zig");
+const usage_refresh = @import("usage.zig");
 const audit_log = @import("audit_log.zig");
 
 const config_file_name = "refresh-bg.json";
@@ -356,6 +357,13 @@ pub fn refreshBackgroundAccountAtIndex(
             .attempts = 1,
         };
     }
+    const maybe_usage_error = try backgroundUsageErrorAlloc(allocator, fetch_result);
+    if (maybe_usage_error) |usage_error| {
+        defer allocator.free(usage_error);
+        if (try registry.setAccountLastUsageError(allocator, reg, account_key, usage_error)) {
+            try registry.saveRegistry(allocator, codex_home, reg);
+        }
+    }
 
     return .{
         .account_index = account_idx,
@@ -363,6 +371,16 @@ pub fn refreshBackgroundAccountAtIndex(
         .failed = true,
         .attempts = 1,
     };
+}
+
+fn backgroundUsageErrorAlloc(allocator: std.mem.Allocator, fetch_result: usage_api.UsageFetchResult) !?[]u8 {
+    if (fetch_result.missing_auth) return try allocator.dupe(u8, "MissingAuth");
+    if (fetch_result.status_code) |status_code| {
+        if (status_code != 200) {
+            return try usage_refresh.formatStatusOverrideAlloc(allocator, status_code, fetch_result.error_code);
+        }
+    }
+    return null;
 }
 
 pub fn selectBackgroundRefreshAccountIndex(reg: *const registry.Registry, seed: u64) ?usize {

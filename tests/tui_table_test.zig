@@ -161,6 +161,24 @@ test "writeAccountsTable shows usage override statuses for failed refreshes" {
     try std.testing.expect(std.mem.count(u8, output, "403") >= 2);
 }
 
+test "writeAccountsTable uses recent account use for last activity" {
+    const gpa = std.testing.allocator;
+    var reg = makeTestRegistry();
+    defer reg.deinit(gpa);
+
+    try appendTestAccount(gpa, &reg, "user-1::acc-1", "user@example.com", "", .team);
+    const now = std.Io.Timestamp.now(app_runtime.io(), .real).toSeconds();
+    reg.accounts.items[0].last_usage_at = now - 3600;
+    reg.accounts.items[0].last_used_at = now;
+
+    var buffer: [2048]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try writeAccountsTable(&writer, &reg, false);
+
+    const output = writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, output, "Now") != null);
+}
+
 test "writeAccountsTable paginates account rows after the default page size" {
     const gpa = std.testing.allocator;
     var reg = makeTestRegistry();

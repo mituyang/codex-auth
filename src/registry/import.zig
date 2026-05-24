@@ -251,6 +251,8 @@ fn importConvertedAuthInfo(
 
     const record = try accountFromAuth(allocator, alias, info);
     try upsertAccount(allocator, reg, record);
+    _ = account_ops.clearAccountLastUsageError(allocator, reg, record_key);
+    _ = try account_ops.reconcileLegacyChatGptAccountId(allocator, codex_home, reg, info);
     return if (existed) .updated else .imported;
 }
 
@@ -292,6 +294,8 @@ fn importAuthInfo(
 
     const record = try accountFromAuth(allocator, alias, info);
     try upsertAccount(allocator, reg, record);
+    _ = account_ops.clearAccountLastUsageError(allocator, reg, record_key);
+    _ = try account_ops.reconcileLegacyChatGptAccountId(allocator, codex_home, reg, info);
     return if (existed) .updated else .imported;
 }
 
@@ -505,6 +509,8 @@ fn syncCurrentAuthBestEffort(
         try upsertAccount(allocator, reg, record);
     }
 
+    _ = account_ops.clearAccountLastUsageError(allocator, reg, record_key);
+    _ = try account_ops.reconcileLegacyChatGptAccountId(allocator, codex_home, reg, &info);
     try setActiveAccountKey(allocator, reg, record_key);
     return if (existing_idx != null) .updated else .imported;
 }

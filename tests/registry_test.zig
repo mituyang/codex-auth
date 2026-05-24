@@ -37,6 +37,33 @@ fn authJsonWithEmailPlan(allocator: std.mem.Allocator, email: []const u8, plan: 
     return try std.fmt.allocPrint(allocator, "{{\"tokens\":{{\"account_id\":\"{s}\",\"id_token\":\"{s}\"}}}}", .{ chatgpt_account_id, jwt });
 }
 
+fn authJsonWithTokenAccountAndOrg(
+    allocator: std.mem.Allocator,
+    email: []const u8,
+    chatgpt_user_id: []const u8,
+    token_account_id: []const u8,
+    organization_id: []const u8,
+    plan: []const u8,
+) ![]u8 {
+    const header = "{\"alg\":\"none\",\"typ\":\"JWT\"}";
+    const payload = try std.fmt.allocPrint(
+        allocator,
+        "{{\"email\":\"{s}\",\"https://api.openai.com/auth\":{{\"chatgpt_account_id\":\"{s}\",\"chatgpt_user_id\":\"{s}\",\"user_id\":\"{s}\",\"chatgpt_plan_type\":\"{s}\",\"organizations\":[{{\"id\":\"{s}\",\"is_default\":true}}]}}}}",
+        .{ email, token_account_id, chatgpt_user_id, chatgpt_user_id, plan, organization_id },
+    );
+    defer allocator.free(payload);
+
+    const h64 = try b64url(allocator, header);
+    defer allocator.free(h64);
+    const p64 = try b64url(allocator, payload);
+    defer allocator.free(p64);
+
+    const jwt = try std.mem.concat(allocator, u8, &[_][]const u8{ h64, ".", p64, ".sig" });
+    defer allocator.free(jwt);
+
+    return try std.fmt.allocPrint(allocator, "{{\"tokens\":{{\"account_id\":\"{s}\",\"id_token\":\"{s}\"}}}}", .{ token_account_id, jwt });
+}
+
 fn accountKeyForEmailAlloc(allocator: std.mem.Allocator, email: []const u8) ![]u8 {
     const chatgpt_user_id = try chatgptUserIdForEmailAlloc(allocator, email);
     defer allocator.free(chatgpt_user_id);
@@ -354,6 +381,21 @@ test "resolveDisplayPlan prefers a usage snapshot plan over the stored auth plan
 
     try std.testing.expectEqual(registry.PlanType.plus, registry.resolvePlan(&reg.accounts.items[0]).?);
     try std.testing.expectEqual(registry.PlanType.team, registry.resolveDisplayPlan(&reg.accounts.items[0]).?);
+}
+
+test "account last activity uses the newest usage or account use timestamp" {
+    const gpa = std.testing.allocator;
+    var reg = makeEmptyRegistry();
+    defer reg.deinit(gpa);
+
+    var rec = try makeAccountRecord(gpa, "activity@example.com", "", .plus, .chatgpt, 1);
+    rec.last_usage_at = 10;
+    rec.last_used_at = 20;
+    try reg.accounts.append(gpa, rec);
+
+    try std.testing.expectEqual(@as(i64, 20), registry.accountLastActivityAt(&reg.accounts.items[0]).?);
+    reg.accounts.items[0].last_usage_at = 30;
+    try std.testing.expectEqual(@as(i64, 30), registry.accountLastActivityAt(&reg.accounts.items[0]).?);
 }
 
 test "registry load defaults missing account_name field to null" {
@@ -986,6 +1028,100 @@ test "sync active auth leaves auth json permissions unchanged while hardening ma
     try std.testing.expect(!changed);
     try expectModeUnix(auth_path, 0o644);
     try expectModeUnix(snapshot_path, 0o600);
+}
+
+test "sync active auth clears stale usage error when matching auth snapshot changes" {
+    const gpa = std.testing.allocator;
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const codex_home = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(codex_home);
+    try tmp.dir.makePath("accounts");
+
+    var reg = makeEmptyRegistry();
+    defer reg.deinit(gpa);
+
+    var rec = try makeAccountRecord(gpa, "user@example.com", "work", .pro, .chatgpt, 1);
+    rec.last_usage_error = try gpa.dupe(u8, "401");
+    rec.last_usage_at = 123;
+    try reg.accounts.append(gpa, rec);
+    try registry.setActiveAccountKey(gpa, &reg, reg.accounts.items[0].account_key);
+
+    const account_key = try accountKeyForEmailAlloc(gpa, "user@example.com");
+    defer gpa.free(account_key);
+    const snapshot_path = try registry.accountAuthPath(gpa, codex_home, account_key);
+    defer gpa.free(snapshot_path);
+    const snapshot_rel = try fs.path.join(gpa, &[_][]const u8{ "accounts", fs.path.basename(snapshot_path) });
+    defer gpa.free(snapshot_rel);
+
+    const previous_auth = try authJsonWithEmailPlan(gpa, "user@example.com", "pro");
+    defer gpa.free(previous_auth);
+    try tmp.dir.writeFile(.{ .sub_path = snapshot_rel, .data = previous_auth });
+
+    const active_auth = try authJsonWithEmailPlan(gpa, "user@example.com", "plus");
+    defer gpa.free(active_auth);
+    try tmp.dir.writeFile(.{ .sub_path = "auth.json", .data = active_auth });
+
+    const changed = try registry.syncActiveAccountFromAuth(gpa, codex_home, &reg);
+    try std.testing.expect(changed);
+    try std.testing.expectEqual(registry.PlanType.plus, reg.accounts.items[0].plan.?);
+    try std.testing.expect(reg.accounts.items[0].last_usage_error == null);
+
+    const snapshot_data = try fixtures.readFileAlloc(gpa, snapshot_path);
+    defer gpa.free(snapshot_data);
+    try std.testing.expectEqualStrings(active_auth, snapshot_data);
+}
+
+test "sync active auth reconciles legacy organization fallback account with token account id" {
+    const gpa = std.testing.allocator;
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const codex_home = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(codex_home);
+    try tmp.dir.makePath("accounts");
+
+    const email = "vsg@searchsomething.site";
+    const chatgpt_user_id = "user-nPIOQnPPd5qaQBNZtwD2LVUR";
+    const legacy_account_id = "org-9Y9khpav54nR938iRk4MGERT";
+    const token_account_id = "229aae0d-cb75-4046-ad93-ea70980b7ac4";
+
+    var reg = makeEmptyRegistry();
+    defer reg.deinit(gpa);
+
+    var legacy_rec = try makeAccountRecord(gpa, email, "legacy", .free, .chatgpt, 1);
+    gpa.free(legacy_rec.account_key);
+    legacy_rec.account_key = try std.fmt.allocPrint(gpa, "{s}::{s}", .{ chatgpt_user_id, legacy_account_id });
+    gpa.free(legacy_rec.chatgpt_account_id);
+    legacy_rec.chatgpt_account_id = try gpa.dupe(u8, legacy_account_id);
+    gpa.free(legacy_rec.chatgpt_user_id);
+    legacy_rec.chatgpt_user_id = try gpa.dupe(u8, chatgpt_user_id);
+    legacy_rec.last_usage_error = try gpa.dupe(u8, "401");
+    try reg.accounts.append(gpa, legacy_rec);
+    try registry.setActiveAccountKey(gpa, &reg, legacy_rec.account_key);
+
+    const legacy_path = try registry.accountAuthPath(gpa, codex_home, legacy_rec.account_key);
+    defer gpa.free(legacy_path);
+    const legacy_rel = try fs.path.join(gpa, &[_][]const u8{ "accounts", fs.path.basename(legacy_path) });
+    defer gpa.free(legacy_rel);
+    try tmp.dir.writeFile(.{ .sub_path = legacy_rel, .data = "{}" });
+
+    const active_auth = try authJsonWithTokenAccountAndOrg(gpa, email, chatgpt_user_id, token_account_id, legacy_account_id, "free");
+    defer gpa.free(active_auth);
+    try tmp.dir.writeFile(.{ .sub_path = "auth.json", .data = active_auth });
+
+    const changed = try registry.syncActiveAccountFromAuth(gpa, codex_home, &reg);
+    try std.testing.expect(changed);
+    try std.testing.expectEqual(@as(usize, 1), reg.accounts.items.len);
+    try std.testing.expectEqualStrings(token_account_id, reg.accounts.items[0].chatgpt_account_id);
+    try std.testing.expectEqualStrings(chatgpt_user_id, reg.accounts.items[0].chatgpt_user_id);
+    try std.testing.expectEqualStrings(email, reg.accounts.items[0].email);
+    try std.testing.expectEqualStrings("legacy", reg.accounts.items[0].alias);
+    try std.testing.expect(reg.accounts.items[0].last_usage_error == null);
+    try std.testing.expect(reg.active_account_key != null);
+    try std.testing.expectEqualStrings(reg.accounts.items[0].account_key, reg.active_account_key.?);
+    try std.testing.expectError(error.FileNotFound, fs.cwd().access(legacy_path, .{}));
 }
 
 test "replaceActiveAuthWithAccountByKey preserves existing auth json permissions" {

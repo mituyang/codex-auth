@@ -136,7 +136,7 @@ pub fn buildSwitchRowsWithUsageOverrides(
             const usage_override = usageOverrideForAccount(reg, usage_overrides, account_idx);
             const rate_5h_str = try usageCellTextAlloc(allocator, rate_5h, usage_override);
             const rate_week_str = try usageCellTextAlloc(allocator, rate_week, usage_override);
-            const last = try timefmt.formatRelativeTimeOrDashAlloc(allocator, rec.last_usage_at, now);
+            const last = try timefmt.formatRelativeTimeOrDashAlloc(allocator, registry.accountLastActivityAt(&rec), now);
             rows[i] = .{
                 .account_index = account_idx,
                 .account = try allocator.dupe(u8, display_row.account_cell),
@@ -246,7 +246,7 @@ pub fn buildSortableRowsWithUsageOverrides(
         errdefer allocator.free(rate_5h_str);
         const rate_week_str = try usageCellTextAlloc(allocator, rate_week, usage_override);
         errdefer allocator.free(rate_week_str);
-        const last = try timefmt.formatRelativeTimeOrDashAlloc(allocator, rec.last_usage_at, now);
+        const last = try timefmt.formatRelativeTimeOrDashAlloc(allocator, registry.accountLastActivityAt(&rec), now);
         errdefer allocator.free(last);
         const account = try sortedAccountCellAlloc(allocator, reg, account_idx);
         errdefer allocator.free(account);
@@ -314,7 +314,7 @@ pub fn buildSwitchRowsFromIndicesWithUsageOverrides(
             const usage_override = usageOverrideForAccount(reg, usage_overrides, account_idx);
             const rate_5h_str = try usageCellTextAlloc(allocator, rate_5h, usage_override);
             const rate_week_str = try usageCellTextAlloc(allocator, rate_week, usage_override);
-            const last = try timefmt.formatRelativeTimeOrDashAlloc(allocator, rec.last_usage_at, now);
+            const last = try timefmt.formatRelativeTimeOrDashAlloc(allocator, registry.accountLastActivityAt(&rec), now);
             rows[i] = .{
                 .account_index = account_idx,
                 .account = try allocator.dupe(u8, display_row.account_cell),
@@ -499,8 +499,8 @@ fn sortedAccountOrder(ctx: SortContext, lhs: usize, rhs: usize) std.math.Order {
         .five_hour => rateOrder(ctx.reg, ctx.usage_overrides, lhs, rhs, 300, true, ctx.now, ctx.spec.direction),
         .weekly => rateOrder(ctx.reg, ctx.usage_overrides, lhs, rhs, 10080, false, ctx.now, ctx.spec.direction),
         .last_activity => optionalI64Order(
-            ctx.reg.accounts.items[lhs].last_usage_at,
-            ctx.reg.accounts.items[rhs].last_usage_at,
+            registry.accountLastActivityAt(&ctx.reg.accounts.items[lhs]),
+            registry.accountLastActivityAt(&ctx.reg.accounts.items[rhs]),
             ctx.spec.direction,
         ),
     };

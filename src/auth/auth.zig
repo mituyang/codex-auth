@@ -5,6 +5,7 @@ const registry = @import("../registry/root.zig");
 pub const AuthInfo = struct {
     email: ?[]u8,
     chatgpt_account_id: ?[]u8,
+    legacy_chatgpt_account_id: ?[]u8 = null,
     chatgpt_user_id: ?[]u8,
     record_key: ?[]u8,
     access_token: ?[]u8,
@@ -16,6 +17,7 @@ pub const AuthInfo = struct {
     pub fn deinit(self: *const AuthInfo, allocator: std.mem.Allocator) void {
         if (self.email) |e| allocator.free(e);
         if (self.chatgpt_account_id) |id| allocator.free(id);
+        if (self.legacy_chatgpt_account_id) |id| allocator.free(id);
         if (self.chatgpt_user_id) |id| allocator.free(id);
         if (self.record_key) |key| allocator.free(key);
         if (self.access_token) |token| allocator.free(token);
@@ -85,6 +87,7 @@ pub fn parseAuthInfoData(allocator: std.mem.Allocator, data: []const u8) !AuthIn
                         if (trimmed.len > 0) return AuthInfo{
                             .email = null,
                             .chatgpt_account_id = null,
+                            .legacy_chatgpt_account_id = null,
                             .chatgpt_user_id = null,
                             .record_key = null,
                             .access_token = null,
@@ -130,6 +133,8 @@ pub fn parseAuthInfoData(allocator: std.mem.Allocator, data: []const u8) !AuthIn
 
                                     var jwt_chatgpt_account_id: ?[]u8 = null;
                                     defer if (jwt_chatgpt_account_id) |id| allocator.free(id);
+                                    var legacy_chatgpt_account_id: ?[]u8 = null;
+                                    defer if (legacy_chatgpt_account_id) |id| allocator.free(id);
                                     var chatgpt_user_id: ?[]u8 = null;
                                     defer if (chatgpt_user_id) |id| allocator.free(id);
                                     switch (claims) {
@@ -157,8 +162,11 @@ pub fn parseAuthInfoData(allocator: std.mem.Allocator, data: []const u8) !AuthIn
                                                                 else => {},
                                                             }
                                                         }
-                                                        if (jwt_chatgpt_account_id == null) {
-                                                            jwt_chatgpt_account_id = try organizationAccountIdAlloc(allocator, aobj);
+                                                        legacy_chatgpt_account_id = try organizationAccountIdAlloc(allocator, aobj);
+                                                        if (jwt_chatgpt_account_id == null and token_chatgpt_account_id == null) {
+                                                            if (legacy_chatgpt_account_id) |legacy_id| {
+                                                                jwt_chatgpt_account_id = try allocator.dupe(u8, legacy_id);
+                                                            }
                                                         }
                                                         if (aobj.get("chatgpt_plan_type")) |pt| {
                                                             switch (pt) {
@@ -197,6 +205,7 @@ pub fn parseAuthInfoData(allocator: std.mem.Allocator, data: []const u8) !AuthIn
                                             const info = AuthInfo{
                                                 .email = email,
                                                 .chatgpt_account_id = chatgpt_account_id,
+                                                .legacy_chatgpt_account_id = legacy_chatgpt_account_id,
                                                 .chatgpt_user_id = chatgpt_user_id_value,
                                                 .record_key = record_key,
                                                 .access_token = access_token,
@@ -211,6 +220,7 @@ pub fn parseAuthInfoData(allocator: std.mem.Allocator, data: []const u8) !AuthIn
                                             } else {
                                                 jwt_chatgpt_account_id = null;
                                             }
+                                            legacy_chatgpt_account_id = null;
                                             chatgpt_user_id = null;
                                             access_token = null;
                                             last_refresh = null;
@@ -233,6 +243,7 @@ pub fn parseAuthInfoData(allocator: std.mem.Allocator, data: []const u8) !AuthIn
     return AuthInfo{
         .email = null,
         .chatgpt_account_id = null,
+        .legacy_chatgpt_account_id = null,
         .chatgpt_user_id = null,
         .record_key = null,
         .access_token = null,

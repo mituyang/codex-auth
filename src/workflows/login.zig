@@ -52,7 +52,10 @@ pub fn handleLogin(allocator: std.mem.Allocator, codex_home: []const u8, opts: c
 
     const record = try registry.accountFromAuth(allocator, "", &info);
     try registry.upsertAccount(allocator, &reg, record);
+    _ = try registry.reconcileLegacyChatGptAccountId(allocator, codex_home, &reg, &info);
     try registry.setActiveAccountKey(allocator, &reg, record_key);
+    registry.touchAccountUse(&reg, record_key);
+    _ = registry.clearAccountLastUsageError(allocator, &reg, record_key);
     var usage_state = try refreshForegroundUsageForDisplayWithBatchFetcherUsingApiEnabledAndActiveOnly(
         allocator,
         codex_home,

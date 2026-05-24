@@ -238,5 +238,56 @@ test "background refresh stops after three retries when fetch keeps failing" {
     try std.testing.expect(result.failed);
     try std.testing.expectEqual(@as(u8, 4), result.attempts);
     try std.testing.expectEqual(@as(usize, 4), retry_fetch_count);
-    try std.testing.expectEqual(@as(?i64, 1), reg.accounts.items[0].last_usage_at);
+    try std.testing.expect(reg.accounts.items[0].last_usage_at != null);
+    try std.testing.expect(reg.accounts.items[0].last_usage_at.? > 1);
+    try std.testing.expectEqualStrings("500", reg.accounts.items[0].last_usage_error.?);
+
+    var loaded = try registry.loadRegistry(gpa, codex_home);
+    defer loaded.deinit(gpa);
+    try std.testing.expectEqualStrings("500", loaded.accounts.items[0].last_usage_error.?);
+    try std.testing.expect(loaded.accounts.items[0].last_usage_at != null);
+}
+
+test "background refresh persists token-expired status without response code text" {
+    const gpa = std.testing.allocator;
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const codex_home = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(codex_home);
+
+    var reg = makeRegistry();
+    defer reg.deinit(gpa);
+    try appendAccount(gpa, &reg, 0, .chatgpt, 1);
+
+    const Fetcher = struct {
+        fn fetch(_: std.mem.Allocator, _: []const u8) !usage_api.UsageFetchResult {
+            return .{
+                .snapshot = null,
+                .status_code = 401,
+                .error_code = usage_api.parseNonSuccessErrorCode(std.testing.allocator, 401,
+                    \\{
+                    \\  "error": {
+                    \\    "message": "Provided authentication token is expired. Please try signing in again.",
+                    \\    "type": "invalid_request_error",
+                    \\    "param": null,
+                    \\    "code": "token_expired"
+                    \\  }
+                    \\}
+                ),
+            };
+        }
+    };
+
+    const result = try refresh_bg.refreshBackgroundAccountAtIndex(gpa, codex_home, &reg, 0, Fetcher.fetch);
+    try std.testing.expect(result.attempted);
+    try std.testing.expect(!result.updated);
+    try std.testing.expect(result.failed);
+    try std.testing.expectEqualStrings("401", reg.accounts.items[0].last_usage_error.?);
+    try std.testing.expect(reg.accounts.items[0].last_usage_at != null);
+
+    var loaded = try registry.loadRegistry(gpa, codex_home);
+    defer loaded.deinit(gpa);
+    try std.testing.expectEqualStrings("401", loaded.accounts.items[0].last_usage_error.?);
+    try std.testing.expect(loaded.accounts.items[0].last_usage_at != null);
 }

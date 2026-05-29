@@ -996,6 +996,83 @@ test "Scenario: Given device auth login for active existing account when running
     try std.testing.expectEqual(loaded.accounts.items[loaded_idx].last_usage_at.?, registry.accountLastActivityAt(&loaded.accounts.items[loaded_idx]).?);
 }
 
+test "Scenario: Given existing active auth when login succeeds then upstream login uses a temporary Codex home" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    try tmp.dir.makePath(".codex");
+    try tmp.dir.makePath("fake-bin");
+
+    const existing_email = "existing@example.com";
+    const existing_auth = try fixtures.authJsonWithEmailPlan(gpa, existing_email, "plus");
+    defer gpa.free(existing_auth);
+    try tmp.dir.writeFile(.{ .sub_path = ".codex/auth.json", .data = existing_auth });
+
+    const expected_email = "new-login@example.com";
+    const fake_auth = try fixtures.authJsonWithEmailPlan(gpa, expected_email, "pro");
+    defer gpa.free(fake_auth);
+    try tmp.dir.writeFile(.{ .sub_path = "fake-auth.json", .data = fake_auth });
+    try writeSuccessfulFakeCodex(tmp.dir);
+    try writeApiKeyFlowFakeNode(gpa, tmp.dir, project_root);
+
+    const fake_bin_path = try fs.path.join(gpa, &[_][]const u8{ home_root, "fake-bin" });
+    defer gpa.free(fake_bin_path);
+    const fake_node_dir = try tmp.dir.realpathAlloc(gpa, "fake-node-bin");
+    defer gpa.free(fake_node_dir);
+    const path_override = try prependTwoPathEntriesAlloc(gpa, fake_bin_path, fake_node_dir);
+    defer gpa.free(path_override);
+
+    const result = try runCliWithIsolatedHomeAndPathAndApiKeyNode(
+        gpa,
+        project_root,
+        home_root,
+        path_override,
+        fake_node_dir,
+        &[_][]const u8{ "login", "--device-auth" },
+    );
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+
+    try expectSuccess(result);
+
+    const active_auth_path = try authJsonPathAlloc(gpa, home_root);
+    defer gpa.free(active_auth_path);
+    const active_auth = try fixtures.readFileAlloc(gpa, active_auth_path);
+    defer gpa.free(active_auth);
+    try std.testing.expectEqualStrings(fake_auth, active_auth);
+
+    const codex_home = try codexHomeAlloc(gpa, home_root);
+    defer gpa.free(codex_home);
+    var loaded = try registry.loadRegistry(gpa, codex_home);
+    defer loaded.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 2), loaded.accounts.items.len);
+
+    const expected_account_key = try fixtures.accountKeyForEmailAlloc(gpa, expected_email);
+    defer gpa.free(expected_account_key);
+    try std.testing.expectEqualStrings(expected_account_key, loaded.active_account_key.?);
+
+    const snapshot_path = try registry.accountAuthPath(gpa, codex_home, expected_account_key);
+    defer gpa.free(snapshot_path);
+    const snapshot_data = try fixtures.readFileAlloc(gpa, snapshot_path);
+    defer gpa.free(snapshot_data);
+    try std.testing.expectEqualStrings(fake_auth, snapshot_data);
+
+    const existing_account_key = try fixtures.accountKeyForEmailAlloc(gpa, existing_email);
+    defer gpa.free(existing_account_key);
+    const existing_snapshot_path = try registry.accountAuthPath(gpa, codex_home, existing_account_key);
+    defer gpa.free(existing_snapshot_path);
+    const existing_snapshot_data = try fixtures.readFileAlloc(gpa, existing_snapshot_path);
+    defer gpa.free(existing_snapshot_data);
+    try std.testing.expectEqualStrings(existing_auth, existing_snapshot_data);
+}
+
 test "Scenario: Given CODEX_HOME override when running login then it stores auth state under the override root" {
     const gpa = std.testing.allocator;
     const project_root = try projectRootAlloc(gpa);

@@ -1,4 +1,6 @@
 const std = @import("std");
+const builtin = @import("builtin");
+const app_runtime = @import("../core/runtime.zig");
 const cli = @import("../cli/root.zig");
 const registry = @import("../registry/root.zig");
 const auth = @import("../auth/auth.zig");
@@ -11,8 +13,16 @@ const refreshAccountNamesAfterLogin = account_names.refreshAccountNamesAfterLogi
 const refreshForegroundUsageForDisplayWithBatchFetcherUsingApiEnabledAndActiveOnly = usage_refresh.refreshForegroundUsageForDisplayWithBatchFetcherUsingApiEnabledAndActiveOnly;
 
 pub fn handleLogin(allocator: std.mem.Allocator, codex_home: []const u8, opts: cli.types.LoginOptions) !void {
-    try cli.login.runCodexLogin(opts);
-    const auth_path = try registry.activeAuthPath(allocator, codex_home);
+    const login_home = try createTempLoginCodexHome(allocator);
+    defer {
+        std.Io.Dir.cwd().deleteTree(app_runtime.io(), login_home) catch |err| {
+            std.log.warn("failed to remove temporary Codex login home `{s}`: {s}", .{ login_home, @errorName(err) });
+        };
+        allocator.free(login_home);
+    }
+
+    try cli.login.runCodexLoginWithCodexHome(allocator, opts, login_home);
+    const auth_path = try registry.activeAuthPath(allocator, login_home);
     defer allocator.free(auth_path);
 
     const info = try auth.parseAuthInfo(allocator, auth_path);
@@ -20,6 +30,7 @@ pub fn handleLogin(allocator: std.mem.Allocator, codex_home: []const u8, opts: c
 
     var reg = try registry.loadRegistry(allocator, codex_home);
     defer reg.deinit(allocator);
+    _ = try registry.syncActiveAccountFromAuth(allocator, codex_home, &reg);
 
     if (info.auth_mode == .apikey) {
         const api_key = info.openai_api_key orelse return error.MissingOpenAiApiKey;
@@ -33,6 +44,9 @@ pub fn handleLogin(allocator: std.mem.Allocator, codex_home: []const u8, opts: c
 
         try registry.ensureAccountsDir(allocator, codex_home);
         try registry.copyManagedFile(auth_path, dest);
+        const active_auth_path = try registry.activeAuthPath(allocator, codex_home);
+        defer allocator.free(active_auth_path);
+        try registry.copyManagedFile(auth_path, active_auth_path);
 
         const record = try registry.accountFromApiKeyMe(allocator, "", &info, &me);
         try registry.upsertAccount(allocator, &reg, record);
@@ -49,6 +63,9 @@ pub fn handleLogin(allocator: std.mem.Allocator, codex_home: []const u8, opts: c
 
     try registry.ensureAccountsDir(allocator, codex_home);
     try registry.copyManagedFile(auth_path, dest);
+    const active_auth_path = try registry.activeAuthPath(allocator, codex_home);
+    defer allocator.free(active_auth_path);
+    try registry.copyManagedFile(auth_path, active_auth_path);
 
     const record = try registry.accountFromAuth(allocator, "", &info);
     try registry.upsertAccount(allocator, &reg, record);
@@ -66,4 +83,47 @@ pub fn handleLogin(allocator: std.mem.Allocator, codex_home: []const u8, opts: c
     defer usage_state.deinit(allocator);
     _ = try refreshAccountNamesAfterLogin(allocator, &reg, &info, defaultAccountFetcher);
     try registry.saveRegistry(allocator, codex_home, &reg);
+}
+
+fn createTempLoginCodexHome(allocator: std.mem.Allocator) ![]u8 {
+    const base = try tempBasePathAlloc(allocator);
+    defer allocator.free(base);
+
+    var counter: usize = 0;
+    while (counter < 100) : (counter += 1) {
+        const path = try std.fmt.allocPrint(
+            allocator,
+            "{s}{c}codex-auth-login-{d}-{d}",
+            .{
+                base,
+                std.fs.path.sep,
+                std.Io.Timestamp.now(app_runtime.io(), .real).toNanoseconds(),
+                counter,
+            },
+        );
+        const status = std.Io.Dir.cwd().createDirPathStatus(app_runtime.io(), path, .default_dir) catch |err| {
+            allocator.free(path);
+            return err;
+        };
+        if (status == .existed) {
+            allocator.free(path);
+            continue;
+        }
+        return path;
+    }
+    return error.PathAlreadyExists;
+}
+
+fn tempBasePathAlloc(allocator: std.mem.Allocator) ![]u8 {
+    if (builtin.os.tag == .windows) {
+        if (try registry.getNonEmptyEnvVarOwned(allocator, "TEMP")) |path| return path;
+        if (try registry.getNonEmptyEnvVarOwned(allocator, "TMP")) |path| return path;
+        if (try registry.getNonEmptyEnvVarOwned(allocator, "TMPDIR")) |path| return path;
+        return allocator.dupe(u8, "C:\\Temp");
+    }
+
+    if (try registry.getNonEmptyEnvVarOwned(allocator, "TMPDIR")) |path| return path;
+    if (try registry.getNonEmptyEnvVarOwned(allocator, "TMP")) |path| return path;
+    if (try registry.getNonEmptyEnvVarOwned(allocator, "TEMP")) |path| return path;
+    return allocator.dupe(u8, "/tmp");
 }

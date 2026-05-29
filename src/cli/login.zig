@@ -57,3 +57,25 @@ pub fn runCodexLogin(opts: types.LoginOptions) !void {
     };
     try ensureCodexLoginSucceeded(term, opts);
 }
+
+pub fn runCodexLoginWithCodexHome(allocator: std.mem.Allocator, opts: types.LoginOptions, codex_home: []const u8) !void {
+    var env_map = try app_runtime.currentEnviron().createMap(allocator);
+    defer env_map.deinit();
+    try env_map.put("CODEX_HOME", codex_home);
+
+    var child = std.process.spawn(app_runtime.io(), .{
+        .argv = codexLoginArgs(opts),
+        .environ_map = &env_map,
+        .stdin = .inherit,
+        .stdout = .inherit,
+        .stderr = .inherit,
+    }) catch |err| {
+        writeCodexLoginLaunchFailureHint(@errorName(err)) catch {};
+        return err;
+    };
+    const term = child.wait(app_runtime.io()) catch |err| {
+        writeCodexLoginLaunchFailureHint(@errorName(err)) catch {};
+        return err;
+    };
+    try ensureCodexLoginSucceeded(term, opts);
+}
